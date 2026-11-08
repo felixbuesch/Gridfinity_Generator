@@ -8,6 +8,8 @@ Web-App: Innenmaß einer Box eingeben, heraus kommen
 - **gestapelte Druckjobs**: Platten in PLA übereinander, dazwischen eine PETG-Trennschicht,
 - **Downloads** als ZIP mit STL- und 3MF-Dateien.
 
+**Live:** https://felixbuesch.github.io/Gridfinity_Generator/ (wird bei jedem Push auf `main` neu gebaut)
+
 Hintergrund, Entscheidungen und offene Punkte: [`docs/ZUSAMMENFASSUNG.md`](docs/ZUSAMMENFASSUNG.md).
 
 ## Entwicklung
@@ -16,7 +18,8 @@ Hintergrund, Entscheidungen und offene Punkte: [`docs/ZUSAMMENFASSUNG.md`](docs/
 npm install
 npm run dev        # Entwicklungsserver
 npm test           # vitest: alle Netze mit manifold-3d auf Geschlossenheit prüfen
-npm run build      # dist/index.html, eine einzige Datei (three.js inline), offline nutzbar
+npm run build      # dist/: Website mit getrennten Dateien (so läuft sie auf GitHub Pages)
+npm run build:single   # dist-single/index.html: eine einzige Datei, offline per Doppelklick
 npm run export-sample   # Beispiel-STL/3MF nach tests/out/
 ```
 

@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "export-sample": "node scripts/export-sample.js"
+    "export-sample": "node scripts/export-sample.js",
+    "build:single": "vite build --mode single"
   },
   "dependencies": {
     "three": "^0.170.0"
