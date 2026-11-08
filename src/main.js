@@ -140,7 +140,7 @@ import { createIntro } from './intro.js';
     v.scene = new THREE.Scene();
     v.camera = new THREE.PerspectiveCamera(32, 4 / 3, 1, 5000);
     v.camera.up.set(0, 0, 1);
-    v.scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.8 * Math.PI));
+    v.scene.add(new THREE.HemisphereLight(0xfff0dc, 0x3a2c20, 0.8 * Math.PI));
     const d1 = new THREE.DirectionalLight(0xffffff, 0.7 * Math.PI); d1.position.set(-0.6, -1, 1.5); v.scene.add(d1);
     const d2 = new THREE.DirectionalLight(0xffffff, 0.25 * Math.PI); d2.position.set(1, 0.7, 0.6); v.scene.add(d2);
     { v.controls = new OrbitControls(v.camera, canvas); v.controls.enableDamping = true; v.controls.screenSpacePanning = true; }
