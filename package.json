@@ -1,6 +1,6 @@
 {
   "name": "gridfinity-planer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Gridfinity-Grundplatten mit Abstandshaltern aus dem Box-Innenmaß, Stapeldruck PLA/PETG, Export als STL/3MF",
@@ -10,13 +10,18 @@
     "preview": "vite preview",
     "test": "vitest run",
     "export-sample": "node scripts/export-sample.js",
-    "build:single": "vite build --mode single"
+    "build:single": "vite build --mode single",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
     "three": "^0.170.0"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "manifold-3d": "3.0.1",
+    "svelte": "^5.38.0",
+    "svelte-check": "^4.7.8",
+    "typescript": "^5.8.3",
     "vite": "^6.0.0",
     "vite-plugin-singlefile": "^2.0.0",
     "vitest": "^3.0.0"
