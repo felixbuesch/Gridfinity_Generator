@@ -36,9 +36,10 @@ export function stats(P) {
   let pla = 0, petg = 0;
   R.stacks.forEach((s, i) => { const m = P.mesh('S:' + i); pla += GF.volume(m.pla); if (m.petg.f.length) petg += GF.volume(m.petg); });
   const flips = R.stacks.reduce((a, s) => a + s.items.filter((it) => it.flip).length, 0);
+  const flipSp = GF.flipMode(o) ? R.stacks.reduce((a, s) => a + s.spacers.filter((e) => (e.level || 0) % 2).length, 0) : 0;
   return {
     nx: R.AX.cells.length, ny: R.AY.cells.length, plates: R.pieces.length, spacers: R.spacers.list.length, jobs: R.stacks.length,
-    pla: pla * PLA_DENSITY, petg: petg * PETG_DENSITY, flips,
+    pla: pla * PLA_DENSITY, petg: petg * PETG_DENSITY, flips, flipSp,
   };
 }
 
@@ -55,7 +56,8 @@ export function jobOf(P, sel) {
   }
   const sp = R.spacers.list[sel.idx], i = R.stacks.indexOf(sp.job);
   const e = sp.job.spacers.find((q) => q.sp === sp);
-  return { i, level: e ? e.level || 0 : 0, of: sp.job.spacers.filter((q) => e && q.x === e.x && q.y === e.y).length, spacer: true };
+  const level = e ? e.level || 0 : 0;
+  return { i, level, of: sp.job.spacers.filter((q) => e && q.x === e.x && q.y === e.y).length, spacer: true, flip: GF.flipMode(P.o) && level % 2 === 1 };
 }
 export const jobName = (st) => (st.items.length ? (st.items.length > 1 ? 'Stapel ' : 'Druckjob ') + st.label : 'Leisten-Bett ' + st.label);
 export const jobWhat = (st) => [st.items.length ? st.items.length + (st.items.length > 1 ? ' Platten' : ' Platte') : '', st.spacers.length ? st.spacers.length + ' Leisten' : ''].filter(Boolean).join(' + ');

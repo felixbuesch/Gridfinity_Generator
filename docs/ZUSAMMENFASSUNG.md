@@ -109,6 +109,7 @@ Das hat Felix entschieden, in dieser Reihenfolge:
    - Kosten: mehr PETG, beim Beispielstapel mit 3 Platten etwa 35 g.
    - Die anderen Formen (Netz, Netz + Keil, Folie) sind weiterhin auswählbar.
 6. **Neu, Felix' Idee (8. Nov. 2026): „Wendeplatte“ (`sepStyle: 'flip'`):** Jede zweite Grundplatte im Stapel wird aus **PETG kopfüber** gedruckt. Kopfüber beginnt sie mit den Stegspitzen genau auf den Stegspitzen der PLA-Platte darunter und wird im 45°-Winkel breiter (gleiche Überhangform wie „Aus Stegspitze“). Oben endet sie mit dem flachen 5,7-mm-Gitter, auf dem die nächste PLA-Platte richtig herum flächig liegt. Kein PETG-Abfall, Platten liegen direkt aufeinander (Stapelhöhe = Anzahl × 4,65 mm). Nach dem Druck wird die PETG-Platte umgedreht und ist eine normale Grundplatte des Einsatzes. Umsetzung: `placeOn(p, top, flip)` (y-Zellfolge gespiegelt), `stackMeshes` (Platte 180° um x gedreht ins PETG-Netz). Auswählbar in Schritt 3 („Trennung: Aus Stegspitze | Wendeplatte“), Standard bleibt vorerst „Aus Stegspitze“. **Testdruck steht aus.**
+   - **Leisten bei Wendeplatte (Felix):** Leisten sind dann 4,65 mm hoch (wie eine Platte) und wechseln im Turm ebenfalls PLA/PETG, ohne Zwischenlage. PETG-Leisten sind echte Teile des Einsatzes. Die Materialwechsel liegen damit auf denselben Höhen wie im Plattenstapel (erledigt damit den offenen Punkt „Höhen abstimmen“ für diesen Modus).
 - **Leisten-Türme nicht ändern:** flache PETG-Platten mit genau der Leisten-Grundfläche. Laut Felix hat das gepasst.
 
 ## 5. Oberfläche (Wünsche von Felix)

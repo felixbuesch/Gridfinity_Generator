@@ -184,6 +184,10 @@ const GF = (() => {
   // until it reaches the full foot of the next plate (inset T_BOT), then a flat base of thickness s
   const growHeight = (o) => T_BOT / Math.tan(Math.max(20, Math.min(70, o.overhang || 45)) * Math.PI / 180);
   // Wendeplatte: jede zweite Platte ist selbst die PETG-Trennung (kopfüber), Platten liegen direkt aufeinander
+  // Wendeplatte: Leisten so hoch wie eine Platte und im Turm ebenfalls abwechselnd PLA/PETG ohne Zwischenlage
+  const flipMode = (o) => o.sepStyle === 'flip' && o.stack;
+  const spacerHeight = (o) => (flipMode(o) ? H : o.spacerH || H);
+  const spacerGap = (o) => (flipMode(o) ? 0 : o.sepT);
   const sepGap = (o) => o.sepStyle === 'flip' ? 0 : o.sepStyle === 'grow' ? growHeight(o) + o.sepT : o.sepT;
   function addGrowSeparator(m, tiles, Z0, gh, s) {
     const Za = Z0 + gh, Z1 = Za + s;
@@ -456,7 +460,7 @@ const GF = (() => {
     for (const sp of list) {
       const w2 = sp.x1 - sp.x0, h2 = sp.y1 - sp.y0;
       const key = w2.toFixed(2) + 'x' + h2.toFixed(2) + JSON.stringify(sp.rounds);
-      if (!types.has(key)) types.set(key, { label: 'R' + (types.size + 1), items: [], w: w2, d: h2, h: o.spacerH || H, tiles: spacerTiles(w2, h2, sp.horiz, sp.rounds, o) });
+      if (!types.has(key)) types.set(key, { label: 'R' + (types.size + 1), items: [], w: w2, d: h2, h: spacerHeight(o), tiles: spacerTiles(w2, h2, sp.horiz, sp.rounds, o) });
       types.get(key).items.push(sp); sp.type = types.get(key);
     }
     return { list, types: [...types.values()] };
@@ -557,8 +561,8 @@ const GF = (() => {
       return false;
     };
     // towers: equal strips stacked on top of each other (PETG layer between) when stack printing is on
-    const towers = [], perT = (o.spacerH || H) + o.sepT;
-    const maxT = o.stack ? Math.max(1, Math.min(o.maxStack, Math.floor(((o.bedZ || 250) - (o.spacerH || H)) / perT) + 1)) : 1;
+    const towers = [], perT = spacerHeight(o) + spacerGap(o);
+    const maxT = o.stack ? Math.max(1, Math.min(o.maxStack, Math.floor(((o.bedZ || 250) - spacerHeight(o)) / perT) + 1)) : 1;
     const groups = new Map();
     for (const sp of spacers.list) {
       const L = Math.max(sp.x1 - sp.x0, sp.y1 - sp.y0), T = Math.min(sp.x1 - sp.x0, sp.y1 - sp.y0);
@@ -615,13 +619,14 @@ const GF = (() => {
         else addSeparator(petg, tiles, (k - 1) * per, o.sepT, o.sepStyle === 'wedge' ? 1 : 0);
       }
     });
-    const sh = o.spacerH || H, perS = sh + o.sepT;
+    const sh = spacerHeight(o), perS = sh + spacerGap(o), flip = flipMode(o);
     let hs = 0;
     for (const e of (stack.spacers || [])) {
-      const t = e.sp.type; if (!t._mesh) t._mesh = spacerMesh(t);
+      const t = e.sp.type; if (!t._mesh || t._meshH !== t.h) { t._mesh = spacerMesh(t); t._meshH = t.h; }
       const lv = e.level || 0;
-      merge(pla, t._mesh, e.x, e.y, e.rot, t.d, lv * perS);
-      if (lv > 0) { // PETG sheet with the strip's footprint below it
+      // Wendeplatte: Leisten auf ungeraden Ebenen sind aus PETG (gleiche Höhen wie die PETG-Platten)
+      merge(flip && lv % 2 ? petg : pla, t._mesh, e.x, e.y, e.rot, t.d, lv * perS);
+      if (lv > 0 && !flip) { // PETG sheet with the strip's footprint below it
         if (!t._sep || t._sepT !== o.sepT) { t._sep = new Mesh(); addPlate(t._sep, t.tiles, 0, o.sepT); t._sepT = o.sepT; }
         merge(petg, t._sep, e.x, e.y, e.rot, t.d, lv * perS - o.sepT);
       }
@@ -775,7 +780,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;

@@ -3,7 +3,7 @@
 // Koordinaten wie im Rechenkern: Millimeter, z nach oben, x nach rechts, y nach hinten.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { plateKey, spacerKey, fmt, cellsOf } from './core.js';
+import { plateKey, spacerKey, fmt, cellsOf, GF } from './core.js';
 
 const COL = {
   pla: 0xf1ece4, petg: 0xe0703a, spacer: 0xd9b27c, amber: 0xf2a65a, hover: 0xfff1d6, lamp: 0xffdcb8,
@@ -143,6 +143,7 @@ export default class Stage {
     const ox = R.AX.gapLow, oy = R.AY.gapLow, geos = new Map();
     // Wendeplatten (PETG) in der Schublade in PETG-Farbe zeigen
     const flipped = new Set(); R.stacks.forEach((s) => s.items.forEach((it) => { if (it.flip) flipped.add(it.p); }));
+    if (GF.flipMode(o)) R.stacks.forEach((s) => s.spacers.forEach((e) => { if ((e.level || 0) % 2) flipped.add(e.sp); }));
     const gget = (key, which) => { const k = key + which; if (!geos.has(k)) { const g = toGeo(P.mesh(key)[which]); g.userData.shared = false; geos.set(k, g); } return geos.get(k); };
     R.pieces.forEach((p, i) => {
       const base = flipped.has(p) ? this.mats.petg : this.mats.pla;
@@ -152,9 +153,10 @@ export default class Stage {
       this.addHit(ox + p.x, oy + p.y, p.w, p.d, 4.65, m.userData);
     });
     R.spacers.list.forEach((s, i) => {
-      const m = new THREE.Mesh(gget(spacerKey(P, s), 'spacer'), this.mats.spacer);
+      const base = flipped.has(s) ? this.mats.petg : this.mats.spacer;
+      const m = new THREE.Mesh(gget(spacerKey(P, s), 'spacer'), base);
       m.position.set(ox + s.x0, oy + s.y0, 0); m.castShadow = m.receiveShadow = true;
-      m.userData = { kind: 'R', idx: i, base: this.mats.spacer }; this.root.add(m); this.pickables.push(m);
+      m.userData = { kind: 'R', idx: i, base }; this.root.add(m); this.pickables.push(m);
       this.addHit(ox + s.x0, oy + s.y0, s.x1 - s.x0, s.y1 - s.y0, s.type.h, m.userData);
     });
     dims(this.root, 0, 0, W, D, Rm * 0.07 + 8, `${fmt(W)} mm`, `${fmt(D)} mm`, '#a0968b', 0.5);

@@ -71,7 +71,8 @@
       return { tag: p.type.label, title: 'Platte', sub: cellsOf(p), rows: [['Maße', `${fmt(p.w)} × ${fmt(p.d)} × 4,65 mm`], ['Position', `${fmt(ox + p.x)} / ${fmt(oy + p.y)} mm ab links / vorne`], ['Gleiche Teile', `${p.type.pieces.length}×`], [petg ? 'PETG' : 'PLA', `${fmt(v * (petg ? 1.27 : PLA_DENSITY), 0)} g${petg ? ' · kopfüber gedruckt' : ''}`]], j };
     }
     const s = R.spacers.list[sel.idx]; if (!s) return null; const t = s.type;
-    return { tag: t.label, title: 'Leiste', sub: '', rows: [['Maße', `${fmt(t.w, 2)} × ${fmt(t.d, 2)} × ${fmt(t.h, 2)} mm`], ['Form', o.spacerStyle === 'solid' || t.tiles.length === 1 ? 'voll' : `Leiter, ${fmt(o.rail, 2)} mm Schienen`], ['Position', `${fmt(ox + s.x0)} / ${fmt(oy + s.y0)} mm ab links / vorne`], ['Gleiche Teile', `${t.items.length}×`]], j };
+    const petg = !!(j && j.flip), v = GF.volume(P.mesh(spacerKey(P, s)).spacer);
+    return { tag: t.label, title: 'Leiste', sub: '', rows: [['Maße', `${fmt(t.w, 2)} × ${fmt(t.d, 2)} × ${fmt(t.h, 2)} mm`], ['Form', o.spacerStyle === 'solid' || t.tiles.length === 1 ? 'voll' : `Leiter, ${fmt(o.rail, 2)} mm Schienen`], ['Position', `${fmt(ox + s.x0)} / ${fmt(oy + s.y0)} mm ab links / vorne`], ['Gleiche Teile', `${t.items.length}×`], [petg ? 'PETG' : 'PLA', `${fmt(v * (petg ? 1.27 : PLA_DENSITY), 1)} g`]], j };
   });
 
   async function download(id: string, name: string, make: () => Uint8Array) {
@@ -158,7 +159,7 @@
               <button type="button" aria-pressed={o.sepStyle === 'flip'} onclick={() => (o.sepStyle = 'flip')} data-tip={TIPS.flip}>Wendeplatte</button>
             </div>
           </div>
-          {#if o.sepStyle === 'flip'}<p class="hint">Jede zweite Platte wird aus <b class="pe">PETG kopfüber</b> gedruckt und trennt die PLA-Platten. Nach dem Druck umdrehen, dann ist sie eine normale Grundplatte. In der 3D-Ansicht orange.</p>{/if}
+          {#if o.sepStyle === 'flip'}<p class="hint">Jede zweite Platte wird aus <b class="pe">PETG kopfüber</b> gedruckt und trennt die PLA-Platten. Nach dem Druck umdrehen, dann ist sie eine normale Grundplatte. Die Leisten sind dann 4,65 mm hoch und wechseln im Turm genauso zwischen PLA und <b class="pe">PETG</b>. In der 3D-Ansicht orange.</p>{/if}
         {/if}
         {#if !R.error}
           <div class="jobs">
@@ -202,7 +203,7 @@
           <div><b>{S.nx} × {S.ny}</b><span>Felder</span></div>
           <div><b>{S.plates}{S.spacers ? ' + ' + S.spacers : ''}</b><span>Platten{S.spacers ? ' + Leisten' : ''}</span></div>
           <div><b>{S.jobs}</b><span>{S.jobs === 1 ? 'Druckjob' : 'Druckjobs'}</span></div>
-          {#if step === 3}<div><b>{fmt(S.pla, 0)} g</b><span>PLA</span></div>{#if S.petg}<div><b>{fmt(S.petg, 0)} g</b><span>PETG{S.flips ? ` · ${S.flips} Platten` : ''}</span></div>{/if}{/if}
+          {#if step === 3}<div><b>{fmt(S.pla, 0)} g</b><span>PLA</span></div>{#if S.petg}<div><b>{fmt(S.petg, 0)} g</b><span>PETG{S.flips ? ` · ${S.flips} Platten` : ''}{S.flipSp ? ` + ${S.flipSp} Leisten` : ''}</span></div>{/if}{/if}
         </div>
       {/if}
 
@@ -251,7 +252,8 @@
     </div>
     <div class="grid2">
       {#each PROFI as [k, l, st, mn]}
-        <label class="f" data-tip={TIPS[k]}>{l}<input type="number" step={st} min={mn} bind:value={o[k] as number}></label>
+        {@const locked = k === 'spacerH' && o.stack && o.sepStyle === 'flip'}
+        <label class="f" data-tip={locked ? 'Bei Wendeplatte sind die Leisten so hoch wie eine Platte (4,65 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}<input type="number" step={st} min={mn} bind:value={o[k] as number} disabled={locked}></label>
       {/each}
     </div>
     <p class="hint">Bambu Lab X2D im Zwei-Düsen-Druck: 235,5 × 256 × 256 mm.</p>
@@ -293,6 +295,7 @@
   .row2, .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .f { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); min-width: 0; }
   .f input { font: 500 15px var(--f-mono); color: var(--ink); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; width: 100%; min-width: 0; }
+  .f input:disabled { opacity: .45; }
   .f input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
   .seg { display: inline-flex; flex-wrap: nowrap; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; align-self: flex-start; }
   .seg.wrap { flex-wrap: wrap; }

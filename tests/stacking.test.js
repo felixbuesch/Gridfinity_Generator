@@ -75,3 +75,27 @@ it('Wendeplatte mit integrierten Rändern wechselt ebenfalls das Material', () =
   const o = { ...BASE, boxW: 523.5, boxD: 287.2, spacers: 'integrated', sepStyle: 'flip' };
   for (const st of GF.compute(o).stacks) st.items.forEach((it, k) => expect(!!it.flip).toBe(k % 2 === 1));
 });
+
+describe('Wendeplatte: Leisten', () => {
+  const o = { ...BASE, boxW: 400, boxD: 300, sepStyle: 'flip' }, R = GF.compute(o), s = R.stacks[0];
+
+  it('Leisten sind so hoch wie eine Platte', () => {
+    for (const t of R.spacers.types) expect(t.h).toBeCloseTo(GF.H, 6);
+  });
+
+  it('Leisten-Türme wechseln PLA/PETG auf denselben Höhen wie die Platten, ohne Zwischenlage', () => {
+    const only = (sp) => GF.stackMeshes({ ...s, items: [], spacers: sp }, o);
+    const lv = (k) => s.spacers.filter((e) => (e.level || 0) === k);
+    expect(lv(1).length).toBeGreaterThan(0);
+    // Ebene 0 nur PLA, Ebene 1 nur PETG
+    expect(only(lv(0)).petg.f.length).toBe(0);
+    expect(only(lv(1)).pla.f.length).toBe(0);
+    const m = only(s.spacers), top = Math.max(...s.spacers.map((e) => e.level || 0)) + 1;
+    expect(m.height).toBeCloseTo(top * GF.H, 6);
+  });
+
+  it('ohne Wendeplatte bleiben die Leisten-Türme wie bisher (eigene Höhe, flache PETG-Lagen)', () => {
+    const o2 = { ...o, sepStyle: 'grow' }, R2 = GF.compute(o2);
+    expect(R2.spacers.types[0].h).toBeCloseTo(2.4, 6);
+  });
+});
