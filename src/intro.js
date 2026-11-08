@@ -6,9 +6,11 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import GF from './gf.js';
 
-const ACCENT = 0x3fb3bf;
+const ACCENT = 0xf2a65a;   // warmes Bernstein, kein Blau
+const LAMP = 0xffc48a;     // Farbe der Lampe über den Modellen
 
 // gleiche Grundwerte wie das Formular des Planers
 export const DEFAULTS = {
@@ -57,39 +59,67 @@ const fmt = (x) => (Math.round(x * 10) / 10).toLocaleString('de-DE');
 // ---------- Materialien (pro Modell, damit jedes einzeln ausblenden kann) ----------
 function makeMats() {
   const M = {
-    body: new THREE.MeshStandardMaterial({ color: 0x2b343c, roughness: 0.55, metalness: 0.3 }),
-    wood: new THREE.MeshStandardMaterial({ color: 0x3a332e, roughness: 0.75, metalness: 0.05 }),
-    metal: new THREE.MeshStandardMaterial({ color: 0xa3afb8, roughness: 0.28, metalness: 0.9 }),
-    screen: new THREE.MeshStandardMaterial({ color: 0x03080a, emissive: 0x0f4a52, emissiveIntensity: 1, roughness: 0.3 }),
+    body: new THREE.MeshStandardMaterial({ color: 0x26221f, roughness: 0.5, metalness: 0.35 }),
+    wood: new THREE.MeshStandardMaterial({ color: 0x5e3d26, roughness: 0.6, metalness: 0.02 }),
+    woodIn: new THREE.MeshStandardMaterial({ color: 0x9c7552, roughness: 0.7, metalness: 0.02 }),
+    shell: new THREE.MeshStandardMaterial({ color: 0xd6cdbf, roughness: 0.42, metalness: 0.0 }),
+    rim: new THREE.MeshStandardMaterial({ color: 0x3b332c, roughness: 0.4, metalness: 0.1 }),
+    label: new THREE.MeshStandardMaterial({ color: 0xf6efe4, roughness: 0.8, metalness: 0.0 }),
+    metal: new THREE.MeshStandardMaterial({ color: 0xb8aa98, roughness: 0.25, metalness: 0.95 }),
+    screen: new THREE.MeshStandardMaterial({ color: 0x050403, emissive: 0x2a1708, emissiveIntensity: 1, roughness: 0.15, metalness: 0.2 }),
     edge: new THREE.LineBasicMaterial({ color: ACCENT }),
-    tile: new THREE.MeshStandardMaterial({ color: 0x8fa3b3, roughness: 0.55, metalness: 0.1 }),
-    pocket: new THREE.MeshStandardMaterial({ color: 0x3a4955, roughness: 0.85 }),
-    spacer: new THREE.MeshStandardMaterial({ color: 0xb8c4a6, roughness: 0.6 }),
-    plate: new THREE.LineBasicMaterial({ color: 0xffc46b }),
+    tile: new THREE.MeshStandardMaterial({ color: 0xece6dc, roughness: 0.55, metalness: 0.0 }),
+    pocket: new THREE.MeshStandardMaterial({ color: 0x4d463f, roughness: 0.85 }),
+    spacer: new THREE.MeshStandardMaterial({ color: 0xd9b27c, roughness: 0.6 }),
+    plate: new THREE.LineBasicMaterial({ color: 0xffb35c }),
     area: new THREE.MeshBasicMaterial({ color: ACCENT, side: THREE.DoubleSide }),
   };
-  const base = { edge: 0.5, plate: 0.95, area: 0.1 };
+  // Kanten nur als warmer Schimmer beim Überfahren, sonst wirken die Modelle gerendert statt als Drahtgitter
+  const base = { edge: 0, plate: 0.9, area: 0.08 };
   for (const [k, m] of Object.entries(M)) { m.transparent = true; m.userData.base = base[k] ?? 1; m.opacity = m.userData.base; }
   return M;
 }
 
 function box(g, M, w, h, d, x, y, z, mat, edges = true) {
   const geo = new THREE.BoxGeometry(w, h, d), m = new THREE.Mesh(geo, mat || M.body);
-  m.position.set(x, y, z); g.add(m);
+  m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m);
   if (edges) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), M.edge); e.position.copy(m.position); g.add(e); }
   return m;
 }
 
 // ---------- Modelle (Millimeter, y nach oben, +z = vorne). Rückgabe: Gruppe + Ort der Rasterfläche ----------
+// abgerundeter Quader, sonst wie box()
+function rbox(g, w, h, d, x, y, z, mat, r = 3) {
+  const rr = Math.max(0.1, Math.min(r, w / 2 - 0.01, h / 2 - 0.01, d / 2 - 0.01));
+  const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 3, rr), mat);
+  m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m);
+  return m;
+}
+
+// Aufbewahrungsbox: abgerundet, Stapelrand oben, Rippen außen, Griffmulden seitlich, Etikett vorne
 function buildBoxModel(W, D, M) {
-  const g = new THREE.Group(), t = 8, H = clamp(Math.min(W, D) * 0.3, 55, 120);
-  box(g, M, W + 2 * t, t, D + 2 * t, 0, -t / 2, 0);
-  box(g, M, W + 2 * t, H, t, 0, H / 2, D / 2 + t / 2);
-  box(g, M, W + 2 * t, H, t, 0, H / 2, -D / 2 - t / 2);
-  box(g, M, t, H, D, -W / 2 - t / 2, H / 2, 0);
-  box(g, M, t, H, D, W / 2 + t / 2, H / 2, 0);
-  // Griffmulden vorne und hinten
-  for (const z of [D / 2 + t + 1, -D / 2 - t - 1]) box(g, M, Math.min(90, W * 0.3), 14, 2, 0, H - 26, z, M.pocket, false);
+  const g = new THREE.Group(), t = 6, H = clamp(Math.min(W, D) * 0.2, 42, 78), Wo = W + 2 * t, Do = D + 2 * t;
+  rbox(g, Wo, t, Do, 0, -t / 2, 0, M.shell, 6);
+  rbox(g, Wo, H, t, 0, H / 2, D / 2 + t / 2, M.shell);
+  rbox(g, Wo, H, t, 0, H / 2, -D / 2 - t / 2, M.shell);
+  rbox(g, t, H, D + 2, -W / 2 - t / 2, H / 2, 0, M.shell);
+  rbox(g, t, H, D + 2, W / 2 + t / 2, H / 2, 0, M.shell);
+  // Stapelrand: dunkler, steht etwas über
+  const L = 7, o = 3;
+  rbox(g, Wo + 2 * o, L, t + o, 0, H + L / 2 - 2, D / 2 + t / 2 + o / 2, M.rim, 2.5);
+  rbox(g, Wo + 2 * o, L, t + o, 0, H + L / 2 - 2, -D / 2 - t / 2 - o / 2, M.rim, 2.5);
+  rbox(g, t + o, L, Do, -W / 2 - t / 2 - o / 2, H + L / 2 - 2, 0, M.rim, 2.5);
+  rbox(g, t + o, L, Do, W / 2 + t / 2 + o / 2, H + L / 2 - 2, 0, M.rim, 2.5);
+  // senkrechte Rippen vorne und hinten
+  const n = Math.max(2, Math.round(W / 75)), step = W / n;
+  for (let i = 1; i < n; i++) for (const z of [D / 2 + t + 1.2, -D / 2 - t - 1.2]) {
+    if (z > 0 && Math.abs(-W / 2 + i * step) < 50) continue; // Platz fürs Etikett
+    rbox(g, 5, H - 10, 2.6, -W / 2 + i * step, (H - 10) / 2 + 2, z, M.shell, 1.2);
+  }
+  // Griffmulden links und rechts
+  for (const sx of [-1, 1]) rbox(g, 2.4, 16, Math.min(90, D * 0.4), sx * (W / 2 + t + 0.6), H - 18, 0, M.rim, 6);
+  // Etikett vorne
+  rbox(g, Math.min(80, W * 0.3), Math.min(26, H * 0.4), 1.6, 0, H * 0.45, D / 2 + t + 0.9, M.label, 1.5);
   return { g, parent: g, cx: 0, cz: 0 };
 }
 
@@ -105,14 +135,14 @@ function buildDrawerModel(W, D, M) {
   box(g, M, Wc - 2 * b, hc, b, 0, yb + hc / 2, -Dc / 2 + b / 2, M.wood, false);
   box(g, M, Wc - 2 * b, 10, Dc - b, 0, y0 - 5, b / 2, M.wood, false);
   // untere, geschlossene Schublade
-  box(g, M, Wc - 2 * b - 4, slot - 14, 16, 0, yb + slot / 2, Dc / 2 - 8);
+  box(g, M, Wc - 2 * b - 4, slot - 14, 16, 0, yb + slot / 2, Dc / 2 - 8, M.wood);
   box(g, M, Math.min(160, W * 0.4), 10, 12, 0, yb + slot / 2, Dc / 2 + 6, M.metal, false);
   // obere Schublade: eigene Gruppe, Ursprung = Bodenmitte innen, fährt in z heraus
   const dr = new THREE.Group();
-  box(dr, M, W + 2 * t, t, D + 2 * t, 0, -t / 2, 0);
-  box(dr, M, W + 2 * t, Hd, t, 0, Hd / 2, -D / 2 - t / 2);
-  box(dr, M, t, Hd, D, -W / 2 - t / 2, Hd / 2, 0);
-  box(dr, M, t, Hd, D, W / 2 + t / 2, Hd / 2, 0);
+  box(dr, M, W + 2 * t, t, D + 2 * t, 0, -t / 2, 0, M.woodIn);
+  box(dr, M, W + 2 * t, Hd, t, 0, Hd / 2, -D / 2 - t / 2, M.woodIn);
+  box(dr, M, t, Hd, D, -W / 2 - t / 2, Hd / 2, 0, M.woodIn);
+  box(dr, M, t, Hd, D, W / 2 + t / 2, Hd / 2, 0, M.woodIn);
   box(dr, M, Wc - 2 * b - 4, slot - 14, 16, 0, (slot - 14) / 2 - t - 4, D / 2 + t + 8, M.wood);
   box(dr, M, Math.min(160, W * 0.4), 10, 12, 0, slot / 2 - 18, D / 2 + t + 22, M.metal, false);
   const closedZ = Dc / 2 - 16 - D / 2 - t;
@@ -175,6 +205,7 @@ function buildGrid(slot, W, D, animate) {
   for (const s of spacers) s.delay = 700;
   const inst = (geo, mat, items) => {
     const m = new THREE.InstancedMesh(geo, mat, Math.max(1, items.length));
+    m.castShadow = m.receiveShadow = true;
     m.count = items.length; m.userData.items = items; g.add(m); return m;
   };
   const body = inst(UNIT_BOX, M.tile, cells), pocket = inst(UNIT_PLANE, M.pocket, cells), sp = inst(UNIT_BOX, M.spacer, spacers);
@@ -226,26 +257,30 @@ export function createIntro({ onDone }) {
   }
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
   scene.fog = new THREE.Fog(0x000000, 10, 30);
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 200);
-  scene.add(new THREE.HemisphereLight(0x9fb4c4, 0x000000, 0.9));
-  const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(4, 9, 7); scene.add(key);
-  const rim = new THREE.DirectionalLight(ACCENT, 3.5); rim.position.set(-7, 5, -8); scene.add(rim);
-  const fill = new THREE.DirectionalLight(0xffd9b0, 0.6); fill.position.set(6, 2, -2); scene.add(fill);
+  // Licht: jede Auswahl hat ihre eigene warme Lampe direkt darüber (siehe Slots), dazu nur ein Hauch Grundlicht
+  scene.add(new THREE.HemisphereLight(0xffd8a8, 0x000000, 0.4));
+  const fill = new THREE.DirectionalLight(0xffcf9e, 0.45); fill.position.set(0, 3, 10); scene.add(fill);
 
-  const floor = new THREE.GridHelper(80, 80, 0x173a40, 0x0c1b1e); floor.position.y = -0.01; scene.add(floor);
+  // schwarzer Boden, auf dem nur der Lichtkegel der Lampen sichtbar wird
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 120).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0x15110d, roughness: 0.92, metalness: 0 }));
+  floor.position.y = -0.01; floor.receiveShadow = true; scene.add(floor);
   // schwebende Staubpartikel
   const NP = 360, pp = new Float32Array(NP * 3);
   for (let i = 0; i < NP; i++) { pp[3 * i] = (Math.random() - 0.5) * 34; pp[3 * i + 1] = Math.random() * 10; pp[3 * i + 2] = (Math.random() - 0.5) * 22 - 3; }
   const pgeo = new THREE.BufferGeometry(); pgeo.setAttribute('position', new THREE.BufferAttribute(pp, 3));
-  const particles = new THREE.Points(pgeo, new THREE.PointsMaterial({ color: ACCENT, size: 0.045, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const particles = new THREE.Points(pgeo, new THREE.PointsMaterial({ color: LAMP, size: 0.035, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false }));
   scene.add(particles);
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.45, 0.5, 0.72);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.18, 0.6, 0.9);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
@@ -264,6 +299,12 @@ export function createIntro({ onDone }) {
     const ring = new THREE.Mesh(new THREE.RingGeometry(1.95, 2.02, 128).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false }));
     ring.position.y = 0.01; s.root.add(ring); s.ring = ring;
+    // warme Lampe senkrecht über dem Modell, weicher Lichtkegel mit Schatten
+    const lamp = new THREE.SpotLight(LAMP, 0, 14, 0.5, 0.75, 0);
+    lamp.position.set(0.3, 8, 0.8); lamp.target.position.set(0, 0, 0);
+    lamp.castShadow = true; lamp.shadow.mapSize.set(1024, 1024); lamp.shadow.bias = -0.0004; lamp.shadow.radius = 4;
+    lamp.shadow.camera.near = 2; lamp.shadow.camera.far = 14;
+    s.root.add(lamp, lamp.target); s.lamp = lamp;
     s.alpha = 0; s.alphaT = 1; s.hover = 0; s.lift = -3; s.liftT = 0; s.pull = 0.45; s.pullT = 0.45; s.yaw = 0; s.drag = 0;
     const d = dims(use); s.W = d.W; s.D = d.D;
     const b = document.createElement('button');
@@ -295,11 +336,14 @@ export function createIntro({ onDone }) {
     const a = s.alpha;
     for (const m of Object.values(s.M)) {
       let o = m.userData.base * a;
-      if (m === s.M.edge) o = Math.min(1, (m.userData.base + s.hover * 0.45) * a);
+      if (m === s.M.edge) o = Math.min(1, (m.userData.base + s.hover * 0.25) * a);
       if (m === s.M.plate) o *= s.grid ? s.grid.userData.lineK ?? 1 : 1;
-      m.opacity = o;
+      m.opacity = m.userData.base >= 1 && o >= 0.97 ? 1 : o;
+      // feste Körper nur beim Ein-/Ausblenden durchsichtig, sonst sauber deckend (keine Sortierfehler)
+      if (m.userData.base >= 1) { const tr = o < 0.97; if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; } }
     }
-    s.ring.material.opacity = (0.16 + s.hover * 0.5) * a * (state === 'select' ? 1 : 0.4);
+    s.ring.material.opacity = s.hover * 0.35 * a * (state === 'select' ? 1 : 0);
+    s.lamp.intensity = (state === 'select' ? 11 + s.hover * 5 : 9) * a;
     s.root.visible = a > 0.005;
   }
 
