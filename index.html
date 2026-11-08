@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gridfinity Planer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Gridfinity <span>Planer</span></h1>
+    <p class="sub">Box-Innenmaß rein, Grundplatten, Abstandshalter und Stapeldruck-Dateien raus.</p>
+  </header>
+  <div class="grid">
+    <form class="rail" id="form" autocomplete="off">
+      <div class="panel">
+        <h2>Box innen</h2>
+        <fieldset>
+          <div class="row2 big">
+            <label class="f">Breite X (mm)<input type="number" id="boxW" value="400" min="20" step="0.5"></label>
+            <label class="f">Tiefe Y (mm)<input type="number" id="boxD" value="300" min="20" step="0.5"></label>
+          </div>
+          <p class="hint">Beispielmaße. Am Boden messen, dort ist die Box meist am engsten.</p>
+          <div class="row2">
+            <label class="f">Spiel je Achse (mm)<input type="number" id="clearance" value="1" min="0" step="0.1"></label>
+            <label class="f">Eckenradius Box (mm)<input type="number" id="cornerR" value="3" min="0" step="0.5"></label>
+          </div>
+        </fieldset>
+      </div>
+      <div class="panel">
+        <h2>Raster und Rand</h2>
+        <fieldset>
+          <div class="f" style="font-size:13px;color:var(--muted)">Abstandshalter
+            <div class="seg" id="spacersSeg"><button type="button" data-v="separate" aria-pressed="true">separate Leisten</button><button type="button" data-v="integrated" aria-pressed="false">in Platten integriert</button></div>
+          </div>
+          <div class="posrow">
+            <div class="pos" id="posGrid" role="group" aria-label="Position des Rasters in der Box">
+              <button type="button" data-x="start" data-y="end" aria-label="hinten links"></button><button type="button" data-x="center" data-y="end" aria-label="hinten mittig"></button><button type="button" data-x="end" data-y="end" aria-label="hinten rechts"></button>
+              <button type="button" data-x="start" data-y="center" aria-label="links mittig"></button><button type="button" data-x="center" data-y="center" aria-label="Mitte"></button><button type="button" data-x="end" data-y="center" aria-label="rechts mittig"></button>
+              <button type="button" data-x="start" data-y="start" aria-label="vorne links"></button><button type="button" data-x="center" data-y="start" aria-label="vorne mittig"></button><button type="button" data-x="end" data-y="start" aria-label="vorne rechts"></button>
+            </div>
+            <div><div style="font-size:13px;color:var(--muted)">Raster liegt an</div><b id="posTxt" style="font-size:15px">Mitte</b><p class="hint" style="margin-top:4px">Die Abstandshalter füllen die Gegenseite.</p></div>
+          </div>
+          <label class="f">Mindestbreite Abstandshalter (mm)<input type="number" id="minSpacer" value="2" min="0" step="0.5"></label>
+          <label class="chk"><input type="checkbox" id="half"> Halbe Zellen (21 mm) am Rand erlauben</label>
+          <p class="hint">Schmalere Reste als die Mindestbreite bleiben als Luft. Separate Leisten machen die Platten untereinander gleich und damit besser stapelbar.</p>
+          <div class="f" style="font-size:13px;color:var(--muted)">Leistenform
+            <div class="seg" id="styleSeg"><button type="button" data-v="ladder" aria-pressed="true">Leiter (sparsam)</button><button type="button" data-v="solid" aria-pressed="false">voll</button></div>
+          </div>
+          <div class="row3">
+            <label class="f">Höhe<input type="number" id="spacerH" value="2.4" min="0.6" max="4.65" step="0.2"></label>
+            <label class="f">Schiene<input type="number" id="rail" value="1.2" min="0.8" step="0.2"></label>
+            <label class="f">Streben alle<input type="number" id="ribPitch" value="40" min="8" step="5"></label>
+          </div>
+          <p class="hint">Leiter = zwei dünne Schienen mit Querstreben, nur dort wo Platte und Boxwand anliegen. Werte in mm; 1,2 mm Schiene sind drei Bahnen mit 0,4-mm-Düse.</p>
+        </fieldset>
+      </div>
+      <div class="panel">
+        <h2>Drucker</h2>
+        <fieldset>
+          <div class="row3">
+            <label class="f">Bett X<input type="number" id="bedX" value="235" min="50" step="1"></label>
+            <label class="f">Bett Y<input type="number" id="bedY" value="256" min="50" step="1"></label>
+            <label class="f">Höhe Z<input type="number" id="bedZ" value="256" min="10" step="1"></label>
+          </div>
+          <p class="hint">Bambu Lab X2D im Zwei-Düsen-Druck: 235,5 × 256 × 256 mm.</p>
+        </fieldset>
+      </div>
+      <div class="panel">
+        <h2>Stapeldruck PLA + PETG</h2>
+        <fieldset>
+          <label class="chk"><input type="checkbox" id="stack" checked> Platten übereinander stapeln</label>
+          <div class="f" style="font-size:13px;color:var(--muted)">Form der PETG-Trennschicht
+            <div class="seg" id="sepSeg" style="flex-wrap:wrap"><button type="button" data-v="grow" aria-pressed="true">Aus Stegspitze</button><button type="button" data-v="ring" aria-pressed="false">Netz</button><button type="button" data-v="wedge" aria-pressed="false">Netz + Keil</button><button type="button" data-v="sheet" aria-pressed="false">Folie</button></div>
+          </div>
+          <div class="row2">
+            <label class="f">PETG-Basisschicht (mm)<input type="number" id="sepT" value="0.6" min="0.1" step="0.1"></label>
+            <label class="f">Überhang (°)<input type="number" id="overhang" value="45" min="20" max="70" step="5"></label>
+          </div>
+          <div class="row2">
+            <label class="f">Max. Platten je Stapel<input type="number" id="maxStack" value="8" min="1" step="1"></label>
+            <label class="f">Platz Prime-Tower (mm)<input type="number" id="towerReserve" value="40" min="0" step="5"></label>
+          </div>
+          <p class="hint">Aus Stegspitze: PETG beginnt oben auf den Stegen der Platte, wächst im Überhangwinkel nach außen bis zur Grundfläche der nächsten Platte, darauf eine Basisschicht und dann die nächste Platte. Ein zusammenhängendes Gitter pro Fuge. Gleich lange Leisten werden ebenfalls zu Türmen gestapelt, mit PETG dazwischen.</p>
+        </fieldset>
+      </div>
+    </form>
+
+    <div class="main">
+      <div class="panel">
+        <h2>Box in 3D</h2>
+        <div class="stats" id="stats"></div>
+        <div class="boxgrid">
+          <div class="boxview">
+            <div class="cvwrap"><canvas id="box3d" aria-label="3D-Ansicht der Box mit allen Teilen"></canvas><div class="tip" id="hoverTip" hidden></div></div>
+            <div class="vbar"><button type="button" class="btn ghost" id="vTop">Draufsicht</button><button type="button" class="btn ghost" id="vIso">Schräg</button><span class="legend"><span><i style="background:var(--pla)"></i>Platte</span><span><i style="background:var(--spacer)"></i>Leiste</span><span><i style="background:var(--hover)"></i>Maus</span><span><i style="background:var(--accent)"></i>gewählt</span></span></div>
+          </div>
+          <aside class="side">
+            <div class="info"><div id="infoHead"></div><canvas id="part3d" aria-label="3D-Ansicht des gewählten Teils" hidden></canvas><div id="infoBody"></div></div>
+            <div class="printwin"><div class="pwhead"><span>Druckansicht</span><span id="pwCap"></span></div><canvas id="mini" aria-label="Vorschau der Druckdatei"></canvas><div class="dl" id="pwDl"></div></div>
+          </aside>
+        </div>
+        <p class="msg" id="planMsg" style="margin:10px 0 0"></p>
+      </div>
+      <div class="panel">
+        <h2>Teileliste</h2>
+        <div class="tablewrap"><table id="parts"></table></div>
+      </div>
+      <div class="panel">
+        <h2>Download</h2>
+        <div class="dl">
+          <button class="btn" type="button" id="dlAll">Alles als ZIP herunterladen</button>
+          <span class="msg" id="dlMsg"></span>
+        </div>
+        <p class="hint" style="margin-top:10px">Das ZIP enthält pro Druckbett eine fertige Datei (Platten plus die Leisten daneben, bei Stapeln PLA- und PETG-STL plus 3MF), zusätzlich alle Einzelteile und eine Anleitung.</p>
+      </div>
+      <div class="panel" id="howto">
+        <h2>Stapel in Bambu Studio drucken</h2>
+        <ol class="steps">
+          <li>Die 3MF des Stapels öffnen. Alternativ <code>…_PLA.stl</code> und <code>…_PETG.stl</code> gleichzeitig importieren und die Frage „als ein Objekt mit mehreren Teilen laden?“ mit Ja beantworten.</li>
+          <li>In der Objektliste den PLA-Teilen das PLA-Filament und den PETG-Teilen das PETG-Filament zuweisen. Beim X2D am besten PLA links und PETG rechts, dann muss kaum gespült werden.</li>
+          <li>Stützstrukturen ausschalten. Die Trennschichten sind schon im Modell, der Slicer soll nichts dazuerfinden.</li>
+          <li>Prime-Tower an lassen (der Planer hält dafür Platz auf dem Bett frei). Schichthöhe 0,2 mm.</li>
+          <li>Nach dem Druck den Stapel von oben nach unten auseinanderziehen. PETG haftet kaum auf PLA, das PETG-Gitter lässt sich am Stück abziehen.</li>
+        </ol>
+        <p class="note" style="margin-top:12px">Ein Wechsel zwischen PLA und PETG passiert nur in den Schichten der Trennlage. Je Stapel-Fuge zeigt die Teileliste, wie viel PETG das kostet.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ftip" id="ftip" role="tooltip"></div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
