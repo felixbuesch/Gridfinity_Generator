@@ -563,25 +563,91 @@ const GF = (() => {
     return new Uint8Array(buf);
   }
 
-  // 3MF: one object with parts (PLA plates = filament 1, PETG separators = filament 2)
-  function threeMF(parts, objName) {
-    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  // 3MF in the Bambu Studio project layout: one object whose parts carry their own extruder
+  // (PLA plates = filament 1, PETG separators = filament 2).
+  //   3D/3dmodel.model            build item + assembly object (components with p:path)
+  //   3D/Objects/object_1.model   the part meshes
+  //   Metadata/model_settings.config  per-part extruder, plate assignment
+  // Vertices are stored relative to the object's footprint centre; the build item transform puts the
+  // object back where the layout placed it on the bed (opts.bed = [w, d] centres it instead).
+  function threeMF(parts, objName, opts) {
+    opts = opts || {};
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const num = (x) => String(+x.toFixed(5));
+    const uuid = (a, b) => ('00000000' + a.toString(16)).slice(-8) + '-' + ('0000' + b.toString(16)).slice(-4) + '-4000-8000-' + '0'.repeat(12);
+    parts = parts.filter(p => p.mesh.f.length);
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of parts) for (let k = 0; k < p.mesh.v.length; k += 3) {
+      const V = p.mesh.v;
+      x0 = Math.min(x0, V[k]); x1 = Math.max(x1, V[k]); y0 = Math.min(y0, V[k + 1]); y1 = Math.max(y1, V[k + 1]); z0 = Math.min(z0, V[k + 2]);
+    }
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const tx = opts.bed ? opts.bed[0] / 2 : cx, ty = opts.bed ? opts.bed[1] / 2 : cy;
+    const oid = parts.length + 1, OBJ = '/3D/Objects/object_1.model', ident = '1 0 0 0 1 0 0 0 1 0 0 0';
     let objs = '', comps = '', cfgParts = '';
     parts.forEach((p, i) => {
-      const id = i + 1, V = p.mesh.v, F = p.mesh.f;
-      const vs = [], ts = [];
-      for (let k = 0; k < V.length; k += 3) vs.push(`<vertex x="${+V[k].toFixed(5)}" y="${+V[k + 1].toFixed(5)}" z="${+V[k + 2].toFixed(5)}"/>`);
+      const id = i + 1, V = p.mesh.v, F = p.mesh.f, vs = [], ts = [];
+      for (let k = 0; k < V.length; k += 3) vs.push(`<vertex x="${num(V[k] - cx)}" y="${num(V[k + 1] - cy)}" z="${num(V[k + 2] - z0)}"/>`);
       for (let k = 0; k < F.length; k += 3) ts.push(`<triangle v1="${F[k]}" v2="${F[k + 1]}" v3="${F[k + 2]}"/>`);
-      objs += `<object id="${id}" name="${esc(p.name)}" type="model"><mesh><vertices>${vs.join('')}</vertices><triangles>${ts.join('')}</triangles></mesh></object>\n`;
-      comps += `<component objectid="${id}"/>`;
-      cfgParts += `    <part id="${id}" subtype="normal_part">\n      <metadata key="name" value="${esc(p.name)}"/>\n      <metadata key="extruder" value="${p.extruder}"/>\n    </part>\n`;
+      objs += `  <object id="${id}" p:UUID="${uuid(id, 1)}" type="model">\n   <mesh>\n    <vertices>\n${vs.join('\n')}\n    </vertices>\n    <triangles>\n${ts.join('\n')}\n    </triangles>\n   </mesh>\n  </object>\n`;
+      comps += `    <component p:path="${OBJ}" objectid="${id}" p:UUID="${uuid(oid, 0x10 + id)}" transform="${ident}"/>\n`;
+      cfgParts += `    <part id="${id}" subtype="normal_part">\n      <metadata key="name" value="${esc(p.name)}"/>\n      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n      <metadata key="source_file" value="${esc(objName)}.3mf"/>\n      <metadata key="source_object_id" value="0"/>\n      <metadata key="source_volume_id" value="${i}"/>\n      <metadata key="extruder" value="${p.extruder}"/>\n    </part>\n`;
     });
-    const oid = parts.length + 1;
-    const model = `<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n<metadata name="Title">${esc(objName)}</metadata>\n<resources>\n${objs}<object id="${oid}" name="${esc(objName)}" type="model"><components>${comps}</components></object>\n</resources>\n<build><item objectid="${oid}"/></build>\n</model>\n`;
-    const cfg = `<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <object id="${oid}">\n    <metadata key="name" value="${esc(objName)}"/>\n    <metadata key="extruder" value="1"/>\n${cfgParts}  </object>\n</config>\n`;
-    const ct = `<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="config" ContentType="text/xml"/></Types>`;
-    const rels = `<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`;
-    return zip([['[Content_Types].xml', ct], ['_rels/.rels', rels], ['3D/3dmodel.model', model], ['Metadata/model_settings.config', cfg]]);
+    const NS = 'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p"';
+    const itemT = `1 0 0 0 1 0 0 0 1 ${num(tx)} ${num(ty)} ${num(z0)}`;
+    const model = `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" ${NS}>
+ <metadata name="Application">BambuStudio-02.00.00.00</metadata>
+ <metadata name="BambuStudio:3mfVersion">1</metadata>
+ <metadata name="Title">${esc(objName)}</metadata>
+ <metadata name="Designer">Gridfinity Planer</metadata>
+ <resources>
+  <object id="${oid}" p:UUID="${uuid(oid, 0)}" type="model">
+   <components>
+${comps}   </components>
+  </object>
+ </resources>
+ <build p:UUID="${uuid(0, 0xb)}">
+  <item objectid="${oid}" p:UUID="${uuid(oid, 0xb)}" transform="${itemT}"/>
+ </build>
+</model>
+`;
+    const objModel = `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" ${NS}>
+ <metadata name="BambuStudio:3mfVersion">1</metadata>
+ <resources>
+${objs} </resources>
+ <build/>
+</model>
+`;
+    const cfg = `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <object id="${oid}">
+    <metadata key="name" value="${esc(objName)}"/>
+    <metadata key="extruder" value="1"/>
+${cfgParts}  </object>
+  <plate>
+    <metadata key="plater_id" value="1"/>
+    <metadata key="plater_name" value=""/>
+    <metadata key="locked" value="false"/>
+    <model_instance>
+      <metadata key="object_id" value="${oid}"/>
+      <metadata key="instance_id" value="0"/>
+      <metadata key="identify_id" value="${oid * 100}"/>
+    </model_instance>
+  </plate>
+  <assemble>
+   <assemble_item object_id="${oid}" instance_id="0" transform="${itemT}" offset="0 0 0" />
+  </assemble>
+</config>
+`;
+    const ct = `<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>\n <Default Extension="config" ContentType="text/xml"/>\n</Types>\n`;
+    const rel = (target) => `<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n <Relationship Target="${target}" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>\n</Relationships>\n`;
+    return zip([
+      ['[Content_Types].xml', ct], ['_rels/.rels', rel('/3D/3dmodel.model')],
+      ['3D/3dmodel.model', model], ['3D/_rels/3dmodel.model.rels', rel(OBJ)], [OBJ.slice(1), objModel],
+      ['Metadata/model_settings.config', cfg],
+    ]);
   }
 
   // ---------- minimal ZIP (store) ----------

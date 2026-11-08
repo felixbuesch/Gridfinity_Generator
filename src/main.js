@@ -387,10 +387,9 @@ import GF from './gf.js';
     } else {
       const s = R.stacks[i], m = getMesh(key), base = `${s.label}_${s.items.map(it => it.p.type.label).join('')}${s.spacers.length ? (s.items.length ? '_mit_' : '') + s.spacers.length + 'Leisten' : ''}`;
       out.push([base + '_PLA.stl', GF.stl(m.pla, base + ' PLA')]);
-      if (m.petg.f.length) {
-        out.push([base + '_PETG.stl', GF.stl(m.petg, base + ' PETG')]);
-        out.push([base + '.3mf', GF.threeMF([{ name: base + ' PLA Platten', mesh: m.pla, extruder: 1 }, { name: base + ' PETG Trennschicht', mesh: m.petg, extruder: 2 }], 'Stapel ' + base)]);
-      }
+      if (m.petg.f.length) out.push([base + '_PETG.stl', GF.stl(m.petg, base + ' PETG')]);
+      // Bambu-Studio-Projekt: PLA-Teil auf Filament 1, PETG-Teil auf Filament 2
+      out.push([base + '.3mf', GF.threeMF([{ name: base + ' PLA', mesh: m.pla, extruder: 1 }, { name: base + ' PETG Trennschicht', mesh: m.petg, extruder: 2 }], base)]);
     }
     return out;
   }
@@ -417,8 +416,9 @@ import GF from './gf.js';
     R.stacks.forEach((s) => L.push(`  ${s.label}: ${s.items.map(it => it.p.type.label).join(' + ') || '-'}${s.items.length > 1 ? ' (unten -> oben)' : ''}${s.spacers.length ? ' + ' + s.spacers.length + ' Leisten daneben' : ''}`));
     if (O.stack) {
       L.push('', `Stapel: PETG-Trennschicht ${O.sepT} mm, Form: ${({ sheet: 'durchgehende Folie', wedge: 'Netz mit 45°-Keil', ring: 'Netz unter den Stegen', grow: `wächst aus der Stegspitze mit ${O.overhang}° Überhang` })[O.sepStyle]}.`);
-      L.push('', 'Bambu Studio:', '  1. S*.3mf öffnen, oder S*_PLA.stl und S*_PETG.stl zusammen importieren und "als ein Objekt mit mehreren Teilen" laden.',
-        '  2. PLA-Teil -> PLA-Filament, PETG-Teil -> PETG-Filament (X2D: PLA linke Düse, PETG rechte Düse).',
+      L.push('', 'Bambu Studio:', '  1. S*.3mf öffnen (Bambu-Studio-Projektformat, PLA-Teil = Filament 1, PETG-Teil = Filament 2).',
+        '     Ausweichweg: S*_PLA.stl und S*_PETG.stl zusammen importieren und "als ein Objekt mit mehreren Teilen" laden.',
+        '  2. Filament 1 = PLA, Filament 2 = PETG; prüfen, dass die Teile so zugeordnet sind (X2D: PLA linke Düse, PETG rechte Düse).',
         '  3. Stützen aus, Prime-Tower an, Schichthöhe 0,2 mm.', '  4. Nach dem Druck die Platten von oben abziehen, PETG-Reste abziehen.');
     }
     return L.join('\r\n');

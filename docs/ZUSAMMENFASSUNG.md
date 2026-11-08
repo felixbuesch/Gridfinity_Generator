@@ -1,6 +1,6 @@
 # Gridfinity Planer – Sitzungszusammenfassung
 
-Stand: 8. November 2026. Zweck: das Projekt in Claude Code (eigenes Repo) weiterführen.
+Stand: 8. November 2026. Repo: https://github.com/felixbuesch/Gridfinity_Generator (Vite-Projekt, siehe README).
 
 ## 1. Ziel
 
@@ -134,7 +134,7 @@ Das hat Felix entschieden, in dieser Reihenfolge:
 ## 7. Offene Punkte
 
 - **Testdruck der Form „Aus Stegspitze“** steht noch aus. Danach eventuell Winkel und Basisschicht anpassen.
-- **3MF in Bambu Studio prüfen:** Werden die Extruder automatisch zugeordnet? Wenn nicht, auf das Projektformat von Bambu umbauen (`3D/Objects/*.model` plus `model_settings.config`).
+- **3MF in Bambu Studio prüfen:** Der Export ist seit 8. Nov. 2026 auf das Bambu-Projektformat umgebaut (`3D/3dmodel.model` mit Komponenten über `p:path`, Netze in `3D/Objects/object_1.model`, `Metadata/model_settings.config` mit Extruder je Teil und Platte 1). Mit lib3mf im Strict-Modus geprüft, **in Bambu Studio noch nicht geöffnet**. Zu prüfen: Werden PLA/PETG automatisch Filament 1/2 zugeordnet? Liegt das Objekt richtig auf der Platte? Es fehlt bewusst `project_settings.config` (Drucker- und Filamentprofile bleiben die aktuell in Bambu Studio gewählten).
 - **Außenmaße der Box:** Bisher werden nur Innenmaße angezeigt. Dafür bräuchte die App ein Eingabefeld für die Wandstärke.
 - **STEP-Export** fehlt, denn er ist im Browser nicht machbar. Möglich wäre eine Python/CadQuery-Variante, die dieselbe Layoutlogik nutzt.
 - **Höhen abstimmen:** Die PETG-Ebenen der Leisten-Türme könnten auf die Fugen der Plattenstapel gelegt werden, damit es weniger Materialwechsel gibt.
