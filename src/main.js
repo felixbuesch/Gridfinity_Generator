@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GF from './gf.js';
+import { createIntro } from './intro.js';
 
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -502,6 +503,26 @@ import GF from './gf.js';
     document.addEventListener('focusout', hide);
     window.addEventListener('scroll', hide, { passive: true });
   })();
-  load(); drawPos(); update();
+  load(); drawPos();
+  // Einsatzort aus dem Intro übernehmen
+  function apply(opts, use, W, D) {
+    for (const [k, v] of Object.entries(opts)) if ($(k)) $(k).value = v;
+    $('boxTitle').textContent = use.area;
+    $('boxHint').textContent = use.hint;
+    $('useSub').textContent = `${use.name} · ${fmt(W)} × ${fmt(D)} mm`;
+    $('stack').checked = true;
+  }
+  document.documentElement.dataset.theme = 'dark';
+  const intro = createIntro({
+    onDone: ({ use, W, D, opts }) => {
+      apply(opts, use, W, D); sel = null;
+      $('app').hidden = false; window.scrollTo(0, 0);
+      update();
+      if (BV) { BV.dimKey = ''; requestAnimationFrame(() => { BV.fit(); BV.dimKey = O.boxW + 'x' + O.boxD; }); }
+    },
+  });
+  $('toIntro').addEventListener('click', () => { $('app').hidden = true; intro.show(); });
+  TIPS.toIntro = 'Zurück zur Auswahl Schreibtisch, Schublade oder Box.';
+  $('toIntro').dataset.tip = TIPS.toIntro;
   window.__gf = { buildZip, select, get R() { return R; } };
 })();

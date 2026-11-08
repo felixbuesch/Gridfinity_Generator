@@ -10,27 +10,57 @@
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
-<div class="wrap">
+<div id="intro" class="intro">
+  <canvas id="introCanvas" aria-label="3D-Auswahl des Einsatzorts"></canvas>
+  <div class="i-head">
+    <div class="i-brand">Gridfinity <span>Planer</span></div>
+    <h1 class="i-title">Wofür planst du?</h1>
+    <p class="i-sub">Wähle den Einsatzort. Raster, Abstandshalter und Druckdateien rechnet der Planer.</p>
+  </div>
+  <div class="i-labels" id="iLabels"></div>
+  <button type="button" class="i-back" id="iBack">← Andere Auswahl</button>
+  <form class="i-panel" id="iForm" autocomplete="off">
+    <aside id="iPanel" hidden>
+      <div class="i-kicker" id="iKicker"></div>
+      <h2 class="i-q" id="iQ"></h2>
+      <div class="i-fields">
+        <label class="i-f"><span>Breite</span><span class="i-in"><input id="iW" type="number" inputmode="decimal" min="42" step="0.5"><em>mm</em></span></label>
+        <span class="i-x">×</span>
+        <label class="i-f"><span>Tiefe</span><span class="i-in"><input id="iD" type="number" inputmode="decimal" min="42" step="0.5"><em>mm</em></span></label>
+      </div>
+      <p class="i-hint" id="iHint"></p>
+      <div class="i-stats" id="iStats"></div>
+      <button type="submit" class="i-go" id="iGo">Plan erstellen <span aria-hidden="true">→</span></button>
+      <p class="i-drag">Ziehen dreht das Modell · Esc geht zurück</p>
+    </aside>
+  </form>
+  <div class="i-fade"></div>
+</div>
+
+<div class="wrap" id="app" hidden>
   <header>
+    <button type="button" class="btn ghost" id="toIntro">← Einsatzort</button>
     <h1>Gridfinity <span>Planer</span></h1>
-    <p class="sub">Box-Innenmaß rein, Grundplatten, Abstandshalter und Stapeldruck-Dateien raus.</p>
+    <p class="sub" id="useSub"></p>
   </header>
   <div class="grid">
     <form class="rail" id="form" autocomplete="off">
       <div class="panel">
-        <h2>Box innen</h2>
+        <h2 id="boxTitle">Box innen</h2>
         <fieldset>
           <div class="row2 big">
             <label class="f">Breite X (mm)<input type="number" id="boxW" value="400" min="20" step="0.5"></label>
             <label class="f">Tiefe Y (mm)<input type="number" id="boxD" value="300" min="20" step="0.5"></label>
           </div>
-          <p class="hint">Beispielmaße. Am Boden messen, dort ist die Box meist am engsten.</p>
+          <p class="hint" id="boxHint">Beispielmaße. Am Boden messen, dort ist die Box meist am engsten.</p>
           <div class="row2">
             <label class="f">Spiel je Achse (mm)<input type="number" id="clearance" value="1" min="0" step="0.1"></label>
             <label class="f">Eckenradius Box (mm)<input type="number" id="cornerR" value="3" min="0" step="0.5"></label>
           </div>
         </fieldset>
       </div>
+      <details class="panel adv" id="adv">
+        <summary>Erweiterte Einstellungen</summary>
       <div class="panel">
         <h2>Raster und Rand</h2>
         <fieldset>
@@ -88,11 +118,12 @@
           <p class="hint">Aus Stegspitze: PETG beginnt oben auf den Stegen der Platte, wächst im Überhangwinkel nach außen bis zur Grundfläche der nächsten Platte, darauf eine Basisschicht und dann die nächste Platte. Ein zusammenhängendes Gitter pro Fuge. Gleich lange Leisten werden ebenfalls zu Türmen gestapelt, mit PETG dazwischen.</p>
         </fieldset>
       </div>
+      </details>
     </form>
 
     <div class="main">
       <div class="panel">
-        <h2>Box in 3D</h2>
+        <h2>Vorschau</h2>
         <div class="stats" id="stats"></div>
         <div class="boxgrid">
           <div class="boxview">
@@ -118,8 +149,8 @@
         </div>
         <p class="hint" style="margin-top:10px">Das ZIP enthält pro Druckbett eine fertige Datei (Platten plus die Leisten daneben, bei Stapeln PLA- und PETG-STL plus 3MF), zusätzlich alle Einzelteile und eine Anleitung.</p>
       </div>
-      <div class="panel" id="howto">
-        <h2>Stapel in Bambu Studio drucken</h2>
+      <details class="panel adv" id="howto">
+        <summary>So druckst du die Stapel in Bambu Studio</summary>
         <ol class="steps">
           <li>Die 3MF des Stapels öffnen. Alternativ <code>…_PLA.stl</code> und <code>…_PETG.stl</code> gleichzeitig importieren und die Frage „als ein Objekt mit mehreren Teilen laden?“ mit Ja beantworten.</li>
           <li>In der Objektliste den PLA-Teilen das PLA-Filament und den PETG-Teilen das PETG-Filament zuweisen. Beim X2D am besten PLA links und PETG rechts, dann muss kaum gespült werden.</li>
@@ -128,7 +159,7 @@
           <li>Nach dem Druck den Stapel von oben nach unten auseinanderziehen. PETG haftet kaum auf PLA, das PETG-Gitter lässt sich am Stück abziehen.</li>
         </ol>
         <p class="note" style="margin-top:12px">Ein Wechsel zwischen PLA und PETG passiert nur in den Schichten der Trennlage. Je Stapel-Fuge zeigt die Teileliste, wie viel PETG das kostet.</p>
-      </div>
+      </details>
     </div>
   </div>
 </div>

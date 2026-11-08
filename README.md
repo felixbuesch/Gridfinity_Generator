@@ -25,6 +25,7 @@ npm run export-sample   # Beispiel-STL/3MF nach tests/out/
 | Datei | Inhalt |
 | --- | --- |
 | `src/gf.js` | Kern: Layout, Netze, STL/3MF/ZIP. ES-Modul ohne Abhängigkeiten, läuft in Node und im Browser. |
+| `src/intro.js` | Startbildschirm: 3D-Auswahl Schreibtisch / Schublade / Box, Maße eingeben, Raster live im Modell |
 | `src/main.js` | Oberfläche: Formular, three.js-Ansichten, Auswahl, Hover, Tooltips, Downloads |
 | `src/style.css` | Design-Tokens hell/dunkel, Layout |
 | `index.html` | Formular und Seitengerüst |
