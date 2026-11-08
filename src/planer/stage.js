@@ -141,11 +141,14 @@ export default class Stage {
     this.buildHousing(W, D, use ? use.id : 'box');
     if (R.error) { this.buildBeds(); this.goStep(this.step, true); return; }
     const ox = R.AX.gapLow, oy = R.AY.gapLow, geos = new Map();
+    // Wendeplatten (PETG) in der Schublade in PETG-Farbe zeigen
+    const flipped = new Set(); R.stacks.forEach((s) => s.items.forEach((it) => { if (it.flip) flipped.add(it.p); }));
     const gget = (key, which) => { const k = key + which; if (!geos.has(k)) { const g = toGeo(P.mesh(key)[which]); g.userData.shared = false; geos.set(k, g); } return geos.get(k); };
     R.pieces.forEach((p, i) => {
-      const m = new THREE.Mesh(gget(plateKey(P, p), 'pla'), this.mats.pla);
+      const base = flipped.has(p) ? this.mats.petg : this.mats.pla;
+      const m = new THREE.Mesh(gget(plateKey(P, p), 'pla'), base);
       m.position.set(ox + p.x, oy + p.y, 0); m.castShadow = m.receiveShadow = true;
-      m.userData = { kind: 'P', idx: i, base: this.mats.pla }; this.root.add(m); this.pickables.push(m);
+      m.userData = { kind: 'P', idx: i, base }; this.root.add(m); this.pickables.push(m);
       this.addHit(ox + p.x, oy + p.y, p.w, p.d, 4.65, m.userData);
     });
     R.spacers.list.forEach((s, i) => {

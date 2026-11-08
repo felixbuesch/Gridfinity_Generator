@@ -6,7 +6,7 @@ export interface Opts {
   boxW: number; boxD: number; clearance: number; cornerR: number; minSpacer: number; half: boolean;
   spacers: 'separate' | 'integrated'; spacerStyle: 'ladder' | 'solid'; alignX: Align; alignY: Align;
   spacerH: number; rail: number; ribPitch: number; bedX: number; bedY: number; bedZ: number;
-  stack: boolean; sepStyle: 'grow' | 'ring' | 'wedge' | 'sheet'; sepT: number; overhang: number; maxStack: number; towerReserve: number;
+  stack: boolean; sepStyle: 'grow' | 'ring' | 'wedge' | 'sheet' | 'flip'; sepT: number; overhang: number; maxStack: number; towerReserve: number;
 }
 
 export const defaults = (): Opts => ({ ...(DEFAULTS as Opts) });
@@ -55,7 +55,8 @@ export const TIPS: Record<string, string> = {
   bedZ: 'Maximale Druckhöhe. Begrenzt, wie viele Platten in einen Stapel passen.',
   stack: 'Alle Platten eines Einsatzes in einem Druck übereinander, getrennt durch PETG. Ein Einsatz = ein Druckjob.',
   sepT: 'Dicke der PETG-Basisschicht zwischen zwei Platten. 0,6 mm sind drei Schichten bei 0,2 mm Schichthöhe.',
-  sepStyle: 'Aus Stegspitze: PETG startet oben auf den Stegen und wächst ohne Stützen schräg nach außen bis unter die nächste Platte. Netz: flaches Gitter unter den Stegen. Netz + Keil: zusätzlich Keile auf der Schräge. Folie: ganze Fläche.',
+  sepStyle: 'Aus Stegspitze: PETG startet oben auf den Stegen und wächst ohne Stützen schräg nach außen bis unter die nächste Platte. Wendeplatte: jede zweite Grundplatte wird aus PETG kopfüber gedruckt und ist selbst die Trennung, kein PETG-Abfall. Netz, Netz + Keil, Folie: ältere Formen.',
+  flip: 'Jede zweite Grundplatte wird aus PETG kopfüber gedruckt. Sie trennt die PLA-Platten und ist danach umgedreht eine ganz normale Grundplatte. Kein Abfall, halbe Stapelhöhe.',
   overhang: 'Wie flach das PETG nach außen wachsen darf, gemessen von der Senkrechten. 45° druckt sicher ohne Stützen.',
   maxStack: 'Höchstens so viele Platten pro Druckjob. Weniger heißt kürzere Jobs, aber evtl. mehr Druckjobs.',
   towerReserve: 'Platz, der auf dem Bett für den Prime-Tower frei bleibt. Er wird beim Wechsel PLA/PETG gebraucht.',

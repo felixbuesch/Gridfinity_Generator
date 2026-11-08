@@ -67,7 +67,8 @@
     const ox = R.AX.gapLow, oy = R.AY.gapLow, j = jobOf(P, sel);
     if (sel.kind === 'P') {
       const p = R.pieces[sel.idx]; if (!p) return null;
-      return { tag: p.type.label, title: 'Platte', sub: cellsOf(p), rows: [['Maße', `${fmt(p.w)} × ${fmt(p.d)} × 4,65 mm`], ['Position', `${fmt(ox + p.x)} / ${fmt(oy + p.y)} mm ab links / vorne`], ['Gleiche Teile', `${p.type.pieces.length}×`], ['PLA', `${fmt(GF.volume(P.mesh(plateKey(P, p)).pla) * PLA_DENSITY, 0)} g`]], j };
+      const petg = !!(j && j.flip), v = GF.volume(P.mesh(plateKey(P, p)).pla);
+      return { tag: p.type.label, title: 'Platte', sub: cellsOf(p), rows: [['Maße', `${fmt(p.w)} × ${fmt(p.d)} × 4,65 mm`], ['Position', `${fmt(ox + p.x)} / ${fmt(oy + p.y)} mm ab links / vorne`], ['Gleiche Teile', `${p.type.pieces.length}×`], [petg ? 'PETG' : 'PLA', `${fmt(v * (petg ? 1.27 : PLA_DENSITY), 0)} g${petg ? ' · kopfüber gedruckt' : ''}`]], j };
     }
     const s = R.spacers.list[sel.idx]; if (!s) return null; const t = s.type;
     return { tag: t.label, title: 'Leiste', sub: '', rows: [['Maße', `${fmt(t.w, 2)} × ${fmt(t.d, 2)} × ${fmt(t.h, 2)} mm`], ['Form', o.spacerStyle === 'solid' || t.tiles.length === 1 ? 'voll' : `Leiter, ${fmt(o.rail, 2)} mm Schienen`], ['Position', `${fmt(ox + s.x0)} / ${fmt(oy + s.y0)} mm ab links / vorne`], ['Gleiche Teile', `${t.items.length}×`]], j };
@@ -150,6 +151,15 @@
       {:else}
         <h2>So wird gedruckt</h2>
         <label class="tog" data-tip={TIPS.stack}><input type="checkbox" bind:checked={o.stack}> Platten stapeln (PLA + PETG)</label>
+        {#if o.stack}
+          <div class="f" data-tip={TIPS.sepStyle}>Trennung zwischen den Platten
+            <div class="seg">
+              <button type="button" aria-pressed={o.sepStyle !== 'flip'} onclick={() => (o.sepStyle = 'grow')}>Aus Stegspitze</button>
+              <button type="button" aria-pressed={o.sepStyle === 'flip'} onclick={() => (o.sepStyle = 'flip')} data-tip={TIPS.flip}>Wendeplatte</button>
+            </div>
+          </div>
+          {#if o.sepStyle === 'flip'}<p class="hint">Jede zweite Platte wird aus <b class="pe">PETG kopfüber</b> gedruckt und trennt die PLA-Platten. Nach dem Druck umdrehen, dann ist sie eine normale Grundplatte. In der 3D-Ansicht orange.</p>{/if}
+        {/if}
         {#if !R.error}
           <div class="jobs">
             {#each R.stacks as s, i (s.label + i)}
@@ -192,7 +202,7 @@
           <div><b>{S.nx} × {S.ny}</b><span>Felder</span></div>
           <div><b>{S.plates}{S.spacers ? ' + ' + S.spacers : ''}</b><span>Platten{S.spacers ? ' + Leisten' : ''}</span></div>
           <div><b>{S.jobs}</b><span>{S.jobs === 1 ? 'Druckjob' : 'Druckjobs'}</span></div>
-          {#if step === 3}<div><b>{fmt(S.pla + S.spacerPla + S.petg, 0)} g</b><span>Material</span></div>{/if}
+          {#if step === 3}<div><b>{fmt(S.pla, 0)} g</b><span>PLA</span></div>{#if S.petg}<div><b>{fmt(S.petg, 0)} g</b><span>PETG{S.flips ? ` · ${S.flips} Platten` : ''}</span></div>{/if}{/if}
         </div>
       {/if}
 
@@ -214,7 +224,7 @@
       <dl>{#each card.rows as [k, v]}<dt>{k}</dt><dd>{v}</dd>{/each}</dl>
       {#if card.j}
         {@const j = card.j}
-        <div class="cj">{jobName(R.stacks[j.i])}{j.of > 1 ? ` · Ebene ${j.level + 1}/${j.of}` : ''}
+        <div class="cj">{jobName(R.stacks[j.i])}{j.of > 1 ? ` · Ebene ${j.level + 1}/${j.of}` : ''}{j.flip ? ' · PETG kopfüber' : ''}
           <button class="ghost" type="button" onclick={() => zipJob(j.i)} data-tip={TIPS.job}>↓</button></div>
       {/if}
     {:else}
@@ -234,7 +244,7 @@
     </div>
     <div class="f" data-tip={TIPS.sepStyle}>PETG-Trennschicht
       <div class="seg wrap">
-        {#each [['grow', 'Aus Stegspitze'], ['ring', 'Netz'], ['wedge', 'Netz + Keil'], ['sheet', 'Folie']] as [v, l]}
+        {#each [['grow', 'Aus Stegspitze'], ['flip', 'Wendeplatte'], ['ring', 'Netz'], ['wedge', 'Netz + Keil'], ['sheet', 'Folie']] as [v, l]}
           <button type="button" aria-pressed={o.sepStyle === v} onclick={() => (o.sepStyle = v as Opts['sepStyle'])}>{l}</button>
         {/each}
       </div>
@@ -302,6 +312,7 @@
   .stats div { flex: 1 1 70px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); border-radius: 10px; padding: 8px 10px; }
   .stats b { display: block; font: 600 18px var(--f-mono); color: #fff; white-space: nowrap; }
   .stats span { font-size: 12px; color: #8f867c; }
+  .pe { color: var(--petg); font-weight: 600; }
   .err { color: var(--warn); font-weight: 600; font-size: 14px; margin: 0; }
   .go { width: 100%; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font: 700 16px var(--f-ui); padding: 15px 18px; cursor: pointer; display: flex; justify-content: center; gap: 10px; transition: transform .15s, box-shadow .2s, opacity .2s; }
   .go:hover:not(:disabled) { box-shadow: 0 0 34px rgba(242,166,90,.45); transform: translateY(-1px); }

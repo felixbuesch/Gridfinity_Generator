@@ -22,7 +22,7 @@ const BOXES = [
   { boxW: 400, boxD: 300, maxStack: 30 }, // gedrehte Platten im Stapel
   { boxW: 800, boxD: 500, maxStack: 30, half: true },
 ];
-const SEP_STYLES = ['grow', 'ring', 'wedge', 'sheet'];
+const SEP_STYLES = ['grow', 'ring', 'wedge', 'sheet', 'flip'];
 const SPACER_MODES = ['separate', 'integrated'];
 
 let wasm;

@@ -183,7 +183,8 @@ const GF = (() => {
   // PETG that starts on the top edges of the plate below and grows outward at the allowed overhang angle
   // until it reaches the full foot of the next plate (inset T_BOT), then a flat base of thickness s
   const growHeight = (o) => T_BOT / Math.tan(Math.max(20, Math.min(70, o.overhang || 45)) * Math.PI / 180);
-  const sepGap = (o) => o.sepStyle === 'grow' ? growHeight(o) + o.sepT : o.sepT;
+  // Wendeplatte: jede zweite Platte ist selbst die PETG-Trennung (kopfüber), Platten liegen direkt aufeinander
+  const sepGap = (o) => o.sepStyle === 'flip' ? 0 : o.sepStyle === 'grow' ? growHeight(o) + o.sepT : o.sepT;
   function addGrowSeparator(m, tiles, Z0, gh, s) {
     const Za = Z0 + gh, Z1 = Za + s;
     for (const t of tiles) {
@@ -482,11 +483,14 @@ const GF = (() => {
   // Platte p auf die oberste Platte top legen. Die Zellen müssen exakt über Zellen liegen, dann wächst das
   // PETG aus den Stegspitzen darunter und es braucht keine Stützen. Drehung um 90° ist erlaubt.
   // xs/ys = Zellfolgen der liegenden Platte im Koordinatensystem der untersten Platte
-  function placeOn(p, top) {
+  // flip: Platte kopfüber (180° um die x-Achse), dadurch kehrt sich ihre Zellfolge in y um.
+  // Kopfüber liegen ihre Stegspitzen unten auf den Stegspitzen darunter, oben ist ihr flaches Bodengitter.
+  function placeOn(p, top, flip = 0) {
     for (const rot of [0, 1]) {
-      const xs = rot ? p.ay.cells.slice().reverse() : p.ax.cells, ys = rot ? p.ax.cells : p.ay.cells;
+      const xs = rot ? p.ay.cells.slice().reverse() : p.ax.cells, ys0 = rot ? p.ax.cells : p.ay.cells;
+      const ys = flip ? ys0.slice().reverse() : ys0;
       const fx = seqFit(xs, top.xs), fy = seqFit(ys, top.ys);
-      if (fx !== null && fy !== null) return { p, rot, xs, ys, dx: top.dx + fx, dy: top.dy + fy };
+      if (fx !== null && fy !== null) return { p, rot, flip, xs, ys, dx: top.dx + fx, dy: top.dy + fy };
     }
     return null;
   }
@@ -502,17 +506,19 @@ const GF = (() => {
         if (s.items.length >= maxN) continue;
         const top = s.items[s.items.length - 1];
         let it;
-        if (margins) { // integrierte Ränder: nur ungedreht und bündig (alte Regel)
-          const fx = axisFit(p.ax, top.p.ax), fy = axisFit(p.ay, top.p.ay);
-          it = fx === null || fy === null ? null : { p, rot: 0, dx: top.dx + fx, dy: top.dy + fy };
-        } else it = placeOn(p, top);
+        if (margins) { // integrierte Ränder: nur ungedreht und bündig (alte Regel); gewendet spiegeln sich die Ränder in y
+          const flip = o.sepStyle === 'flip' ? s.items.length % 2 : 0;
+          const ay = flip ? { cells: p.ay.cells.slice().reverse(), mLow: p.ay.mHigh, mHigh: p.ay.mLow } : p.ay;
+          const fx = axisFit(p.ax, top.pax), fy = axisFit(ay, top.pay);
+          it = fx === null || fy === null ? null : { p, rot: 0, flip, pax: p.ax, pay: ay, dx: top.dx + fx, dy: top.dy + fy };
+        } else it = placeOn(p, top, o.sepStyle === 'flip' ? s.items.length % 2 : 0);
         if (!it) continue;
         // gleiche Platte oben bevorzugen, sonst die engste passende
         const score = (top.p.key === p.key ? 0 : 1e9) + top.p.w * top.p.d;
         if (!best || score < best.score) best = { s, it, score };
       }
       if (best) best.s.items.push(best.it);
-      else stacks.push({ items: [{ p, rot: 0, xs: p.ax.cells, ys: p.ay.cells, dx: 0, dy: 0 }] });
+      else stacks.push({ items: [{ p, rot: 0, flip: 0, xs: p.ax.cells, ys: p.ay.cells, pax: p.ax, pay: p.ay, dx: 0, dy: 0 }] });
     }
     stacks.forEach((s, i) => s.label = 'S' + (i + 1));
     return stacks;
@@ -592,9 +598,16 @@ const GF = (() => {
     const pla = new Mesh(), petg = new Mesh(), gap = sepGap(o), per = H + gap;
     stack.items.forEach((it, k) => {
       const base = it.rot ? rotTiles(it.p.type.tiles, it.p.d) : it.p.type.tiles;
+      if (it.flip) { // PETG-Wendeplatte: Platte bauen und kopfüber an ihren Platz legen (180° um x, echte Drehung)
+        const tmp = new Mesh(); addPlate(tmp, base, 0);
+        const dd = it.rot ? it.p.w : it.p.d, z0 = k * per, V = tmp.v, F = tmp.f;
+        const P = (i) => [V[3 * i] + it.dx, dd - V[3 * i + 1] + it.dy, z0 + H - V[3 * i + 2]];
+        for (let q = 0; q < F.length; q += 3) petg.tri(P(F[q]), P(F[q + 1]), P(F[q + 2]));
+        return;
+      }
       const tiles = base.map(t => ({ ...t, x0: t.x0 + it.dx, x1: t.x1 + it.dx, y0: t.y0 + it.dy, y1: t.y1 + it.dy }));
       addPlate(pla, tiles, k * per);
-      if (k > 0) {
+      if (k > 0 && o.sepStyle !== 'flip') {
         if (o.sepStyle === 'sheet') { // one continuous PETG foil over the whole footprint of the upper plate
           const sheet = tiles.map(t => ({ ...t, pocket: false, nbPocket: [false, false, false, false] }));
           addPlate(petg, sheet, (k - 1) * per + H, o.sepT);

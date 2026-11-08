@@ -12,14 +12,15 @@ const SIZES = [[400, 300], [300, 200], [560, 300], [600, 450], [150, 100], [800,
 
 // Rechteck und Zellgrenzen einer liegenden Platte im Bett-Koordinatensystem
 function placed(it) {
-  const xs = it.rot ? it.p.ay.cells.slice().reverse() : it.p.ax.cells, ys = it.rot ? it.p.ax.cells : it.p.ay.cells;
+  const xs = it.rot ? it.p.ay.cells.slice().reverse() : it.p.ax.cells, ys0 = it.rot ? it.p.ax.cells : it.p.ay.cells;
+  const ys = it.flip ? ys0.slice().reverse() : ys0;
   const edges = (seq, o) => seq.reduce((a, c) => (a.push(a[a.length - 1] + c), a), [o]);
   return { ex: edges(xs, it.dx), ey: edges(ys, it.dy) };
 }
 const close = (a, b) => Math.abs(a - b) < 1e-6;
 
-describe.each(SIZES)('Einsatz %s × %s mm', (w, d) => {
-  const o = { ...BASE, boxW: w, boxD: d }, R = GF.compute(o);
+describe.each(SIZES.flatMap(([w, d]) => [[w, d, 'grow'], [w, d, 'flip']]))('Einsatz %s × %s mm, %s', (w, d, sepStyle) => {
+  const o = { ...BASE, boxW: w, boxD: d, sepStyle }, R = GF.compute(o);
   const plateJobs = R.stacks.filter((s) => s.items.length);
 
   it('alle Platten in einem Stapel, alles auf einem Druckbett', () => {
@@ -49,4 +50,28 @@ describe('gedrehte Platten', () => {
     expect(GF.volume(m.pla)).toBeGreaterThan(0);
     expect(GF.volume(m.petg)).toBeGreaterThan(0);
   });
+});
+
+describe('Wendeplatte (PETG-Platte kopfüber)', () => {
+  const o = { ...BASE, boxW: 800, boxD: 500, sepStyle: 'flip' }, R = GF.compute(o), s = R.stacks[0];
+
+  it('jede zweite Platte ist kopfüber aus PETG, sonst gibt es kein PETG zwischen den Platten', () => {
+    s.items.forEach((it, k) => expect(!!it.flip, `Ebene ${k + 1}`).toBe(k % 2 === 1));
+  });
+
+  it('Platten liegen direkt aufeinander: Höhe = Anzahl × 4,65 mm', () => {
+    const plates = s.items.length * GF.H, m = GF.stackMeshes({ ...s, spacers: [] }, o);
+    expect(m.height).toBeCloseTo(plates, 6);
+  });
+
+  it('PETG-Netz enthält genau die gewendeten Platten (gleiches Volumen wie aufrecht)', () => {
+    const m = GF.stackMeshes({ ...s, spacers: [] }, o);
+    const flipVol = s.items.filter((it) => it.flip).reduce((a, it) => a + GF.volume(GF.plateMesh(it.p.type)), 0);
+    expect(GF.volume(m.petg)).toBeCloseTo(flipVol, 4);
+  });
+});
+
+it('Wendeplatte mit integrierten Rändern wechselt ebenfalls das Material', () => {
+  const o = { ...BASE, boxW: 523.5, boxD: 287.2, spacers: 'integrated', sepStyle: 'flip' };
+  for (const st of GF.compute(o).stacks) st.items.forEach((it, k) => expect(!!it.flip).toBe(k % 2 === 1));
 });
