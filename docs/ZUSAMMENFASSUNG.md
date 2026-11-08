@@ -73,7 +73,8 @@ Die Netze werden **direkt aus Dreiecken** aufgebaut, ohne Boolesche Operationen.
    - Höhe 2,4 mm,
    - Leisten mit weniger als 2 × Schiene + 1,5 mm Breite werden massiv.
    - Die Box-Eckradien werden an den Leistenenden abgerundet.
-5. **Stapel (`buildStacks`):** gierig, größte Platte zuerst. Platte B darf auf Platte A, wenn ihre Zellen deckungsgleich auf A liegen (`axisFit`). Die Stapelhöhe ist durch Druckhöhe und `maxStack` begrenzt. Ist Stapeln aus, ist jede Platte ein eigener Job.
+5. **Ein Einsatz = ein Druckjob (seit 8. Nov. 2026, Felix' Vorgabe):** Bei aktivem Stapeldruck wählt `stackSplit` die Aufteilung so, dass alle Platten in **einen** Stapel passen (danach: wenigste Platten, dann gleichmäßig). Eine Platte darf nur auf eine Platte, deren Zellen sie exakt überdeckt (`placeOn`/`seqFit`), sonst bräuchte das PETG Stützen. Platten dürfen um 90° gedreht gestapelt werden (`rotTiles`). Standard „Max. Platten je Stapel“ = 30.
+6. **Stapel (`buildStacks`, alt):** gierig, größte Platte zuerst. Platte B darf auf Platte A, wenn ihre Zellen deckungsgleich auf A liegen (`axisFit`). Die Stapelhöhe ist durch Druckhöhe und `maxStack` begrenzt. Ist Stapeln aus, ist jede Platte ein eigener Job.
 6. **Leisten aufs Plattenbett (`packSpacers`):**
    - Gleich lange Leisten werden zu **Türmen** gestapelt, wenn Stapeln an ist. Zwischen zwei Leisten liegt eine PETG-Platte mit genau ihrer Grundfläche.
    - Die Türme werden in die freien L-Bereiche neben der Platte gepackt (Bahnen, 3 mm Abstand).

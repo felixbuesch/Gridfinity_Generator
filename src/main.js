@@ -11,7 +11,7 @@ import { createIntro } from './intro.js';
   const segVal = { spacersSeg: 'separate', styleSeg: 'ladder', sepSeg: 'grow' };
   const pos = { x: 'center', y: 'center' };
   const NUM = ['boxW', 'boxD', 'clearance', 'cornerR', 'minSpacer', 'spacerH', 'rail', 'ribPitch', 'bedX', 'bedY', 'bedZ', 'sepT', 'overhang', 'maxStack', 'towerReserve'];
-  const STORE = 'gf-planer-v5';
+  const STORE = 'gf-planer-v6';
   const POSNAME = { x: { start: 'links', center: 'mittig', end: 'rechts' }, y: { start: 'vorne', center: 'mittig', end: 'hinten' } };
 
   function readOpts() {

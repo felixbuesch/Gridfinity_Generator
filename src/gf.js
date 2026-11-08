@@ -291,6 +291,39 @@ const GF = (() => {
     return tiles;
   }
 
+  // ---------- stapelgerechte Aufteilung ----------
+  // alle Zerlegungen von n Zellen in Gruppen (Größen absteigend), jede <= maxPart, höchstens maxParts Gruppen
+  function partitions(n, maxPart, maxParts) {
+    const out = [];
+    const rec = (left, max, acc) => {
+      if (left === 0) { out.push(acc.slice()); return; }
+      if (acc.length >= maxParts) return;
+      for (let k = Math.min(max, left); k >= 1; k--) { acc.push(k); rec(left - k, k, acc); acc.pop(); }
+    };
+    rec(n, maxPart, []);
+    return out;
+  }
+  // Achse ohne Rand in aufeinanderfolgende Gruppen der angegebenen Größen schneiden
+  function cutAxis(ax, sizes) {
+    let i = 0;
+    return sizes.map((k) => {
+      const cells = ax.cells.slice(i, i + k), offset = ax.cells.slice(0, i).reduce((a, b) => a + b, 0);
+      const g = { cells, mLow: 0, mHigh: 0, offset, width: cells.reduce((a, b) => a + b, 0), first: i, last: i + k };
+      i += k; return g;
+    });
+  }
+  function makePieces(sx, sy, ox, oy, sep) {
+    const pieces = [];
+    sy.forEach((gy, jy) => sx.forEach((gx, ix) => {
+      pieces.push({
+        ax: gx, ay: gy, ix, iy: jy, x: ox + gx.offset, y: oy + gy.offset, w: gx.width, d: gy.width,
+        outer: sep ? [false, false, false, false] : [jy === 0, ix === sx.length - 1, jy === sy.length - 1, ix === 0],
+        key: axisKey(gx) + '#' + axisKey(gy)
+      });
+    }));
+    return pieces;
+  }
+
   function compute(o) {
     const AX = axisLayout(o.boxW, o.clearance, o.minSpacer, o.half, o.alignX || o.align);
     const AY = axisLayout(o.boxD, o.clearance, o.minSpacer, o.half, o.alignY || o.align);
@@ -300,21 +333,15 @@ const GF = (() => {
     const gX = sep ? { ...AX, mLow: 0, mHigh: 0 } : AX, gY = sep ? { ...AY, mLow: 0, mHigh: 0 } : AY;
     const ox = sep ? AX.mLow : 0, oy = sep ? AY.mLow : 0;
     let best = null;
-    for (const [lx, ly] of [[bx, by], [by, bx]]) {
+    if (o.stack && sep) best = stackSplit(gX, gY, bx, by, o);
+    if (!best) for (const [lx, ly] of [[bx, by], [by, bx]]) {
       const sx = splitAxis(gX, lx), sy = splitAxis(gY, ly);
       if (!sx || !sy) continue;
       const cnt = sx.length * sy.length;
       if (!best || cnt < best.cnt) best = { sx, sy, cnt };
     }
     if (!best) return { error: 'Eine einzelne Zelle mit Abstandshalter passt nicht aufs Druckbett. Druckbettmaße prüfen.' };
-    const pieces = [];
-    best.sy.forEach((gy, jy) => best.sx.forEach((gx, ix) => {
-      pieces.push({
-        ax: gx, ay: gy, ix, iy: jy, x: ox + gx.offset, y: oy + gy.offset, w: gx.width, d: gy.width,
-        outer: sep ? [false, false, false, false] : [jy === 0, ix === best.sx.length - 1, jy === best.sy.length - 1, ix === 0],
-        key: axisKey(gx) + '#' + axisKey(gy)
-      });
-    }));
+    const pieces = makePieces(best.sx, best.sy, ox, oy, sep);
     // identical piece types
     const types = new Map();
     for (const p of pieces) {
@@ -341,6 +368,29 @@ const GF = (() => {
     return { AX, AY, pieces, types: [...types.values()], stacks: jobs, spacers, totalW: AX.cells.reduce((a, b) => a + b, 0) + AX.mLow + AX.mHigh, totalD: AY.cells.reduce((a, b) => a + b, 0) + AY.mLow + AY.mHigh };
   }
 
+  // Aufteilung so wählen, dass die Platten aufeinander passen: erst möglichst wenige Stapel (Druckjobs),
+  // dann möglichst wenige Platten, dann möglichst gleichmäßig. Jede Platte darf einzeln gedreht aufs Bett.
+  function stackSplit(gX, gY, bx, by, o) {
+    const L = Math.max(bx, by), fits = (w, d) => (w <= bx + 1e-9 && d <= by + 1e-9) || (w <= by + 1e-9 && d <= bx + 1e-9);
+    const cand = (ax) => {
+      const n = ax.cells.length, total = ax.cells.reduce((a, b) => a + b, 0), minParts = Math.max(1, Math.ceil(total / L - 1e-9));
+      const maxPart = Math.max(1, Math.floor(L / (PITCH / 2) + 1e-9));
+      return partitions(n, maxPart, Math.min(n, minParts + 2)).map((sz) => cutAxis(ax, sz)).filter((gs) => gs.every((g) => g.width <= L + 1e-9));
+    };
+    const cx = cand(gX), cy = cand(gY), combos = [];
+    for (const sx of cx) for (const sy of cy) combos.push({ sx, sy, n: sx.length * sy.length });
+    combos.sort((a, b) => a.n - b.n);
+    let best = null;
+    for (const c of combos) {
+      if (best && best.stacks === 1 && c.n > best.n) break; // ein Stapel gefunden, mehr Platten bringen nichts
+      if (best && c.n > best.n + 12) break;
+      if (!c.sx.every((gx) => c.sy.every((gy) => fits(gx.width, gy.width)))) continue;
+      const st = buildStacks(makePieces(c.sx, c.sy, 0, 0, true), o).length;
+      const even = c.sx.reduce((a, g) => a + g.width * g.width, 0) + c.sy.reduce((a, g) => a + g.width * g.width, 0);
+      if (!best || st < best.stacks || (st === best.stacks && (c.n < best.n || (c.n === best.n && even < best.even)))) best = { sx: c.sx, sy: c.sy, n: c.n, cnt: c.n, stacks: st, even };
+    }
+    return best;
+  }
   // separate spacer strips around the grid. S/N strips span the full width, W/E strips sit between them
   // ladder frame: two thin rails along the length + cross ribs. local coords, length along x if horiz
   function spacerTiles(w, h, horiz, rounds, o) {
@@ -420,28 +470,49 @@ const GF = (() => {
     if (b.mHigh > 0 && !(b.cells.length === a.cells.length && b.mHigh === a.mHigh)) return null;
     return off;
   }
-  function sameRound(b, a, dx, dy) { // rounded corners of B must sit on rounded corners of A
-    return true;
+  // Lage der Zellfolge b auf der Zellfolge a (zusammenhängend, gleiche Breiten): Versatz in mm, sonst null
+  function seqFit(b, a) {
+    for (let i = 0; i + b.length <= a.length; i++) {
+      let ok = true;
+      for (let k = 0; k < b.length && ok; k++) ok = a[i + k] === b[k];
+      if (ok) return a.slice(0, i).reduce((s, x) => s + x, 0);
+    }
+    return null;
+  }
+  // Platte p auf die oberste Platte top legen. Die Zellen müssen exakt über Zellen liegen, dann wächst das
+  // PETG aus den Stegspitzen darunter und es braucht keine Stützen. Drehung um 90° ist erlaubt.
+  // xs/ys = Zellfolgen der liegenden Platte im Koordinatensystem der untersten Platte
+  function placeOn(p, top) {
+    for (const rot of [0, 1]) {
+      const xs = rot ? p.ay.cells.slice().reverse() : p.ax.cells, ys = rot ? p.ax.cells : p.ay.cells;
+      const fx = seqFit(xs, top.xs), fy = seqFit(ys, top.ys);
+      if (fx !== null && fy !== null) return { p, rot, xs, ys, dx: top.dx + fx, dy: top.dy + fy };
+    }
+    return null;
   }
   function buildStacks(pieces, o) {
     const per = H + sepGap(o);
     const maxN = Math.max(1, Math.min(o.maxStack, Math.floor((o.bedZ - H) / per) + 1));
-    const sorted = pieces.slice().sort((p, q) => q.w * q.d - p.w * p.d);
+    const margins = pieces.some((p) => p.ax.mLow || p.ax.mHigh || p.ay.mLow || p.ay.mHigh);
+    const sorted = pieces.slice().sort((p, q) => q.w * q.d - p.w * p.d || Math.max(q.w, q.d) - Math.max(p.w, p.d));
     const stacks = [];
     for (const p of sorted) {
-      let placed = false;
-      // prefer stacks whose top is identical
-      const order = stacks.slice().sort((s, t) => (t.items[t.items.length - 1].p.type === p.type) - (s.items[s.items.length - 1].p.type === p.type));
-      for (const s of order) {
+      let best = null;
+      for (const s of stacks) {
         if (s.items.length >= maxN) continue;
         const top = s.items[s.items.length - 1];
-        const fx = axisFit(p.ax, top.p.ax), fy = axisFit(p.ay, top.p.ay);
-        if (fx === null || fy === null) continue;
-        // rounded outer corners: only allow when outer flags match on margin sides
-        s.items.push({ p, dx: top.dx + fx, dy: top.dy + fy });
-        placed = true; break;
+        let it;
+        if (margins) { // integrierte Ränder: nur ungedreht und bündig (alte Regel)
+          const fx = axisFit(p.ax, top.p.ax), fy = axisFit(p.ay, top.p.ay);
+          it = fx === null || fy === null ? null : { p, rot: 0, dx: top.dx + fx, dy: top.dy + fy };
+        } else it = placeOn(p, top);
+        if (!it) continue;
+        // gleiche Platte oben bevorzugen, sonst die engste passende
+        const score = (top.p.key === p.key ? 0 : 1e9) + top.p.w * top.p.d;
+        if (!best || score < best.score) best = { s, it, score };
       }
-      if (!placed) stacks.push({ items: [{ p, dx: 0, dy: 0 }] });
+      if (best) best.s.items.push(best.it);
+      else stacks.push({ items: [{ p, rot: 0, xs: p.ax.cells, ys: p.ay.cells, dx: 0, dy: 0 }] });
     }
     stacks.forEach((s, i) => s.label = 'S' + (i + 1));
     return stacks;
@@ -508,10 +579,20 @@ const GF = (() => {
     for (let k = 0; k < F.length; k += 3) dst.tri(P(F[k]), P(F[k + 1]), P(F[k + 2]));
   }
   function plateMesh(type) { const m = new Mesh(); addPlate(m, type.tiles, 0); return m; }
+  // Kacheln einer Platte um 90° gegen den Uhrzeigersinn drehen; Ergebnis liegt in [0,d] x [0,w]
+  function rotTiles(tiles, d) {
+    const rs = (a) => [a[3], a[0], a[1], a[2]]; // Seiten S,E,N,W
+    return tiles.map((t) => {
+      const r = { ...t, x0: d - t.y1, x1: d - t.y0, y0: t.x0, y1: t.x1, boundary: rs(t.boundary), nbPocket: rs(t.nbPocket), rounds: {} };
+      for (const c of Object.keys(t.rounds || {})) r.rounds[(+c + 1) % 4] = t.rounds[c];
+      return r;
+    });
+  }
   function stackMeshes(stack, o) {
     const pla = new Mesh(), petg = new Mesh(), gap = sepGap(o), per = H + gap;
     stack.items.forEach((it, k) => {
-      const tiles = it.p.type.tiles.map(t => ({ ...t, x0: t.x0 + it.dx, x1: t.x1 + it.dx, y0: t.y0 + it.dy, y1: t.y1 + it.dy }));
+      const base = it.rot ? rotTiles(it.p.type.tiles, it.p.d) : it.p.type.tiles;
+      const tiles = base.map(t => ({ ...t, x0: t.x0 + it.dx, x1: t.x1 + it.dx, y0: t.y0 + it.dy, y1: t.y1 + it.dy }));
       addPlate(pla, tiles, k * per);
       if (k > 0) {
         if (o.sepStyle === 'sheet') { // one continuous PETG foil over the whole footprint of the upper plate

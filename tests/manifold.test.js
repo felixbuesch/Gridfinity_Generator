@@ -19,6 +19,8 @@ const BOXES = [
   { boxW: 523.5, boxD: 287.2, half: true, alignX: 'start', alignY: 'end' },
   { boxW: 90, boxD: 300, alignX: 'end', spacerStyle: 'solid' },
   { boxW: 250, boxD: 250, cornerR: 0, minSpacer: 10 },
+  { boxW: 400, boxD: 300, maxStack: 30 }, // gedrehte Platten im Stapel
+  { boxW: 800, boxD: 500, maxStack: 30, half: true },
 ];
 const SEP_STYLES = ['grow', 'ring', 'wedge', 'sheet'];
 const SPACER_MODES = ['separate', 'integrated'];
