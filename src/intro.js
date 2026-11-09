@@ -66,7 +66,10 @@ function makeMats() {
     rim: new THREE.MeshStandardMaterial({ color: 0x3b332c, roughness: 0.4, metalness: 0.1 }),
     label: new THREE.MeshStandardMaterial({ color: 0xf6efe4, roughness: 0.8, metalness: 0.0 }),
     metal: new THREE.MeshStandardMaterial({ color: 0xb8aa98, roughness: 0.25, metalness: 0.95 }),
-    screen: new THREE.MeshStandardMaterial({ color: 0x050403, emissive: 0x2a1708, emissiveIntensity: 1, roughness: 0.15, metalness: 0.2 }),
+    screen: new THREE.MeshStandardMaterial({ color: 0x000000, map: screenTex(), emissive: 0xffffff, emissiveMap: screenTex(), emissiveIntensity: 1.15, roughness: 0.25, metalness: 0 }),
+    bezel: new THREE.MeshStandardMaterial({ color: 0x55504a, roughness: 0.35, metalness: 0.45 }),
+    legs: new THREE.MeshStandardMaterial({ color: 0x9a8f82, roughness: 0.3, metalness: 0.7 }),
+    deskTop: new THREE.MeshStandardMaterial({ color: 0x8a5f3e, roughness: 0.5, metalness: 0.02 }),
     edge: new THREE.LineBasicMaterial({ color: ACCENT }),
     tile: new THREE.MeshStandardMaterial({ color: 0xece6dc, roughness: 0.55, metalness: 0.0 }),
     pocket: new THREE.MeshStandardMaterial({ color: 0x4d463f, roughness: 0.85 }),
@@ -78,6 +81,35 @@ function makeMats() {
   const base = { edge: 0, plate: 0.9, area: 0.08 };
   for (const [k, m] of Object.entries(M)) { m.transparent = true; m.userData.base = base[k] ?? 1; m.opacity = m.userData.base; }
   return M;
+}
+
+// Bildschirminhalt: kleine Planer-Ansicht (warmer Hintergrund, Raster, Panel), leuchtet selbst
+let _screen = null;
+function screenTex() {
+  if (_screen) return _screen;
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 472;
+  const x = c.getContext('2d');
+  const bg = x.createLinearGradient(0, 0, 0, c.height); bg.addColorStop(0, '#3a2414'); bg.addColorStop(1, '#140d08');
+  x.fillStyle = bg; x.fillRect(0, 0, c.width, c.height);
+  const glow = x.createRadialGradient(380, 270, 20, 380, 270, 380); glow.addColorStop(0, 'rgba(255,190,120,.35)'); glow.addColorStop(1, 'rgba(255,190,120,0)');
+  x.fillStyle = glow; x.fillRect(0, 0, c.width, c.height);
+  x.fillStyle = '#f2a65a'; x.font = '600 26px monospace'; x.fillText('GRIDFINITY PLANER', 40, 52);
+  x.fillStyle = 'rgba(255,255,255,.12)'; x.fillRect(40, 70, 640, 2);
+  // Raster 7 x 4
+  const s = 76, ox = 70, oy = 110;
+  for (let i = 0; i < 7; i++) for (let j = 0; j < 4; j++) {
+    x.fillStyle = '#efe6d8'; x.fillRect(ox + i * s, oy + j * s, s - 6, s - 6);
+    x.fillStyle = '#5a4535'; x.fillRect(ox + i * s + 9, oy + j * s + 9, s - 24, s - 24);
+  }
+  x.strokeStyle = '#ffb35c'; x.lineWidth = 4; x.strokeRect(ox - 4, oy - 4, 4 * s + 2, 4 * s + 2);
+  // Panel rechts
+  x.fillStyle = 'rgba(20,14,10,.85)'; x.fillRect(730, 90, 250, 330);
+  x.fillStyle = '#ffffff'; x.font = '700 30px sans-serif'; x.fillText('400 × 300', 752, 150);
+  x.fillStyle = 'rgba(255,255,255,.35)'; for (let k = 0; k < 4; k++) x.fillRect(752, 185 + k * 34, 200 - k * 30, 10);
+  x.fillStyle = '#f2a65a'; x.fillRect(752, 350, 206, 46);
+  x.fillStyle = '#1a0f05'; x.font = '700 22px sans-serif'; x.fillText('Plan erstellen →', 770, 381);
+  _screen = new THREE.CanvasTexture(c); _screen.colorSpace = THREE.SRGBColorSpace; _screen.anisotropy = 4;
+  return _screen;
 }
 
 function box(g, M, w, h, d, x, y, z, mat, edges = true) {
@@ -153,14 +185,14 @@ function buildDrawerModel(W, D, M) {
 
 function buildDeskModel(W, D, M) {
   const g = new THREE.Group(), dw = Math.max(W + 420, 1100), dd = Math.max(D + 280, 620), legH = 560;
-  box(g, M, dw, 30, dd, 0, -15, 0, M.wood);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, M, 44, legH, 44, sx * (dw / 2 - 50), -30 - legH / 2, sz * (dd / 2 - 50), M.body);
-  box(g, M, dw - 140, 60, 20, 0, -60, -dd / 2 + 60, M.body, false);
+  box(g, M, dw, 30, dd, 0, -15, 0, M.deskTop);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, M, 44, legH, 44, sx * (dw / 2 - 50), -30 - legH / 2, sz * (dd / 2 - 50), M.legs);
+  box(g, M, dw - 140, 60, 20, 0, -60, -dd / 2 + 60, M.legs, false);
   // Monitor hinten
   const mz = -dd / 2 + 95, sw = Math.min(dw * 0.5, 720), sh = sw * 0.46;
-  box(g, M, 240, 8, 150, 0, 4, mz, M.metal, false);
-  box(g, M, 44, 150, 26, 0, 80, mz - 20, M.metal, false);
-  box(g, M, sw, sh, 18, 0, 150 + sh / 2, mz, M.body);
+  box(g, M, 240, 8, 150, 0, 4, mz, M.legs, false);
+  box(g, M, 44, 150, 26, 0, 80, mz - 20, M.legs, false);
+  box(g, M, sw, sh, 18, 0, 150 + sh / 2, mz, M.bezel);
   const scr = new THREE.Mesh(new THREE.PlaneGeometry(sw - 20, sh - 20), M.screen);
   scr.position.set(0, 150 + sh / 2, mz + 9.5); g.add(scr);
   // Zielfläche fürs Raster (vorne mittig)
