@@ -37,40 +37,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .i-tag { font-size: 13px; color: #8f867c; transition: color .3s; }
 .i-label.on .i-tag { color: #d9d0c5; }
 .intro.detail .i-label { opacity: 0 !important; pointer-events: none; transition: opacity .25s; }
-.i-back { position: absolute; left: max(20px, env(safe-area-inset-left, 0px) + 12px); top: max(20px, env(safe-area-inset-top, 0px) + 12px); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); color: #ece4da; font: 500 14px var(--f-ui); padding: 9px 14px; border-radius: 999px; cursor: pointer; opacity: 0; pointer-events: none; transform: translateY(-8px); transition: opacity .4s .5s, transform .4s .5s, background .2s; }
-.i-back:hover { background: rgba(255,255,255,.12); }
-.intro.detail .i-back { opacity: 1; pointer-events: auto; transform: none; }
-#iPanel { position: absolute; right: max(24px, env(safe-area-inset-right, 0px) + 16px); top: 50%; width: min(380px, calc(100vw - 32px)); transform: translate(30px, -50%); opacity: 0; transition: opacity .5s, transform .6s cubic-bezier(.2,.8,.2,1); background: rgba(18, 14, 11, .72); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,.08); border-radius: 18px; padding: 26px 24px 22px; box-shadow: 0 30px 80px rgba(0,0,0,.6); }
-#iPanel.on { opacity: 1; transform: translate(0, -50%); }
-.i-kicker { font: 600 11px var(--f-mono); letter-spacing: .24em; text-transform: uppercase; color: #f2a65a; }
-.i-q { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; margin: 8px 0 20px; color: #fff; text-transform: none; }
-.i-fields { display: flex; align-items: flex-end; gap: 10px; }
-.i-f { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8f867c; min-width: 0; }
-.i-in { display: flex; align-items: baseline; gap: 6px; border-bottom: 2px solid rgba(255,255,255,.14); transition: border-color .2s; }
-.i-in:focus-within { border-color: #f2a65a; }
-.i-in input { all: unset; width: 100%; min-width: 0; font: 600 34px var(--f-mono); color: #fff; padding: 2px 0 6px; -moz-appearance: textfield; }
-.i-in input::-webkit-outer-spin-button, .i-in input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.i-in em { font: 500 13px var(--f-mono); font-style: normal; color: #8f867c; }
-.i-x { font: 400 22px var(--f-mono); color: #5e564e; padding-bottom: 12px; }
-.i-fits { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
-.i-fits div { display: flex; flex-wrap: wrap; gap: 2px 8px; font: 500 11.5px var(--f-mono); color: #8f867c; }
-.i-fits .fl { width: 100%; font-family: var(--f-ui); }
-.i-fits button { all: unset; cursor: pointer; color: #d9d0c5; border-bottom: 1px dotted rgba(242,166,90,.5); }
-.i-fits button:hover, .i-fits button:focus-visible { color: #f2a65a; }
-.i-hint { font-size: 13px; color: #a0968b; margin: 14px 0 18px; line-height: 1.45; }
-.i-stats { display: flex; gap: 8px; margin-bottom: 20px; min-height: 58px; }
-.i-stats div { flex: 1; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); border-radius: 10px; padding: 8px 10px; }
-.i-stats b { display: block; font: 600 19px var(--f-mono); color: #fff; }
-.i-stats span { font-size: 12px; color: #8f867c; display: inline-flex; align-items: center; gap: 5px; }
-.i-sw { display: inline-block; width: 12px; height: 2px; background: #ffb35c; }
-.i-err { color: #f0b36a; font-size: 13px; font-weight: 600; }
-.i-go { width: 100%; border: 0; border-radius: 12px; background: #f2a65a; color: #1a0f05; font: 700 16px var(--f-ui); padding: 15px 18px; cursor: pointer; display: flex; justify-content: center; gap: 10px; transition: transform .15s, box-shadow .2s, opacity .2s; box-shadow: 0 0 0 rgba(242,166,90,0); }
-.i-go:hover:not(:disabled) { box-shadow: 0 0 34px rgba(242,166,90,.45); transform: translateY(-1px); }
-.i-go:hover span { transform: translateX(3px); }
-.i-go span { transition: transform .2s; }
-.i-go:disabled { opacity: .35; cursor: not-allowed; }
-.i-go:focus-visible, .i-back:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.i-drag { margin: 12px 0 0; text-align: center; font-size: 12px; color: #5e564e; }
 .i-fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .6s; }
 .intro.leaving .i-fade { opacity: 1; }
 @keyframes iUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
@@ -80,12 +46,5 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .i-sub { display: none; }
   .i-label { flex-direction: row; gap: 10px; padding: 6px 10px; }
   .i-tag { display: none; }
-  #iPanel { left: 12px; right: 12px; width: auto; top: auto; bottom: max(12px, env(safe-area-inset-bottom, 0px) + 8px); transform: translateY(30px); padding: 20px 18px 16px; }
-  #iPanel.on { transform: none; }
-  .i-q { font-size: 20px; margin-bottom: 12px; }
-  .i-in input { font-size: 28px; }
-  .i-hint { margin: 10px 0 12px; }
-  .i-stats { margin-bottom: 14px; min-height: 0; }
-  .i-drag { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .i-head { animation: none; } }

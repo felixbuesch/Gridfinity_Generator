@@ -54,7 +54,6 @@ const E = {
   back: (k) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); },
 };
 const REDUCED = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-const fmt = (x) => (Math.round(x * 10) / 10).toLocaleString('de-DE');
 
 // ---------- Materialien (pro Modell, damit jedes einzeln ausblenden kann) ----------
 function makeMats() {
@@ -429,8 +428,7 @@ export function createIntro({ onDone }) {
   }
   new ResizeObserver(resize).observe(root);
 
-  // ---- Auswahl ----
-  const panel = $('iPanel'), backBtn = $('iBack'), inW = $('iW'), inD = $('iD');
+  // ---- Auswahl: heranzoomen, dann direkt in den Planer (Maße in Schritt 1) ----
   function select(i) {
     if (state !== 'select') return;
     state = 'detail'; sel = slots[i]; hovered = null;
@@ -442,73 +440,14 @@ export function createIntro({ onDone }) {
     moveSlot(sel, new THREE.Vector3(0, 0, 0), 1300);
     moveCam('detail', 1400);
     sel.pullT = 0.85; sel.liftT = 0; sel.yaw = 0;
-    $('iKicker').textContent = sel.use.name;
-    $('iQ').textContent = sel.use.q;
-    $('iHint').textContent = sel.use.hint;
-    inW.value = sel.W; inD.value = sel.D;
-    stats();
-    setTimeout(() => { if (state === 'detail') { panel.hidden = false; requestAnimationFrame(() => panel.classList.add('on')); if (matchMedia('(pointer:fine)').matches) inW.focus({ preventScroll: true }); } }, REDUCED ? 0 : 750);
     buildGrid(sel, sel.W, sel.D, true);
+    setTimeout(go, REDUCED ? 0 : 1000);
   }
-  function back() {
-    if (state !== 'detail') return;
-    state = 'select';
-    root.classList.remove('detail');
-    panel.classList.remove('on'); setTimeout(() => { if (state === 'select') panel.hidden = true; }, 300);
-    for (const s of slots) { s.alphaT = 1; s.liftT = 0; if (s !== sel) s.root.position.copy(slotHome(s.i)); }
-    moveSlot(sel, slotHome(sel.i), 1200);
-    moveCam('select', 1300);
-    sel.pullT = 0.45; sel = null;
-  }
-  backBtn.addEventListener('click', back);
-  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && running) back(); });
-
-  function readDims() {
-    const W = parseFloat(String(inW.value).replace(',', '.')), D = parseFloat(String(inD.value).replace(',', '.'));
-    return { W: isFinite(W) ? W : 0, D: isFinite(D) ? D : 0 };
-  }
-  // klein unter den Feldern: Maße, bei denen das Raster genau aufgeht (keine Leisten)
-  function fits() {
-    const { W, D } = readDims(), c = planOptions(sel.use.id, 0, 0).clearance;
-    for (const [id, v, inp] of [['iFitW', W, inW], ['iFitD', D, inD]]) {
-      const f = GF.fitSizes(v, c, false), el = $(id);
-      const lab = f.exact ? '✓ geht genau auf' : sel.use.id === 'desk' ? 'Raster genau' : 'ohne Leisten';
-      el.innerHTML = `<span class="fl">${lab}</span>` + (f.lo && !f.exact ? `<button type="button" data-v="${f.lo}">↓ ${fmt(f.lo)}</button>` : '') + `<button type="button" data-v="${f.hi}">↑ ${fmt(f.hi)}</button>`;
-      el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { inp.value = b.dataset.v; onInput(); }));
-    }
-  }
-  function stats() {
-    fits();
-    const R = sel.R, el = $('iStats'), go = $('iGo');
-    if (!R || R.error) {
-      el.innerHTML = `<span class="i-err">${R ? R.error : ''}</span>`; go.disabled = true; return;
-    }
-    go.disabled = false;
-    const nx = R.AX.cells.length, ny = R.AY.cells.length;
-    el.innerHTML = `<div><b>${nx} × ${ny}</b><span>Felder</span></div><div><b>${R.pieces.length}</b><span>Platten <i class="i-sw"></i></span></div><div><b>${R.stacks.length}</b><span>Druckjobs</span></div>`;
-  }
-  let tIn = null;
-  const onInput = () => {
-    clearTimeout(tIn);
-    tIn = setTimeout(() => {
-      const { W, D } = readDims();
-      if (W < 1 || D < 1 || W > 3000 || D > 3000) { sel.R = { error: 'Bitte Maße zwischen 42 und 3000 mm eingeben.' }; stats(); return; }
-      const prev = sel.R && !sel.R.error ? sel.R.AX.cells.length + 'x' + sel.R.AY.cells.length : '';
-      sel.W = W; sel.D = D;
-      rebuild(sel, false);
-      const now = sel.R && !sel.R.error ? sel.R.AX.cells.length + 'x' + sel.R.AY.cells.length : '';
-      if (now !== prev) buildGrid(sel, W, D, true);
-      stats();
-    }, 140);
-  };
-  inW.addEventListener('input', onInput); inD.addEventListener('input', onInput);
-  $('iForm').addEventListener('submit', (e) => { e.preventDefault(); go(); });
 
   function go() {
-    if (!sel || !sel.R || sel.R.error) return;
+    if (!sel || state !== 'detail') return;
     const { use, W, D } = sel;
-    saved[use.id] = { W, D };
-    try { localStorage.setItem(STORE, JSON.stringify(saved)); } catch (e) {}
+    state = 'leaving';
     root.classList.add('leaving');
     setTimeout(() => {
       running = false; root.hidden = true; root.classList.remove('leaving');
@@ -588,7 +527,7 @@ export function createIntro({ onDone }) {
 
   function show() {
     root.hidden = false; state = 'select'; sel = null; hovered = null;
-    root.classList.remove('detail', 'leaving'); panel.classList.remove('on'); panel.hidden = true;
+    root.classList.remove('detail', 'leaving');
     for (const s of slots) { s.alphaT = 1; s.liftT = 0; s.pullT = 0.45; s.alpha = 0; s.root.position.copy(slotHome(s.i)); }
     for (const s of slots) { s.label.style.animation = 'none'; void s.label.offsetWidth; s.label.style.animation = ''; }
     resize();
@@ -600,7 +539,7 @@ export function createIntro({ onDone }) {
 
   resize();
   show();
-  const api = { show, select, back, go, get state() { return state; }, slots };
+  const api = { show, select, go, get state() { return state; }, slots };
   window.__intro = api;
   return api;
 }
