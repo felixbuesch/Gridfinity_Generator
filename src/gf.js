@@ -296,6 +296,15 @@ const GF = (() => {
     return tiles;
   }
 
+  // Innenmaße, bei denen das Raster ohne Rest aufgeht (keine Leisten nötig): nächstkleineres und nächstgrößeres
+  function fitSizes(v, clearance, half) {
+    const step = half ? PITCH / 2 : PITCH, c = clearance || 0;
+    const k = Math.floor((v - c) / step + 1e-9), r1 = (x) => Math.round(x * 10) / 10;
+    if (k * step < PITCH) return { lo: null, hi: r1(PITCH + c), exact: false, cells: 0 }; // noch keine ganze Zelle
+    const lo = k * step + c, exact = Math.abs(v - lo) < 0.05;
+    return { lo: r1(lo), hi: r1(lo + step), exact, cells: (k * step) / PITCH };
+  }
+
   // ---------- stapelgerechte Aufteilung ----------
   // alle Zerlegungen von n Zellen in Gruppen (Größen absteigend), jede <= maxPart, höchstens maxParts Gruppen
   function partitions(n, maxPart, maxParts) {
@@ -333,10 +342,18 @@ const GF = (() => {
     const AX = axisLayout(o.boxW, o.clearance, o.minSpacer, o.half, o.alignX || o.align);
     const AY = axisLayout(o.boxD, o.clearance, o.minSpacer, o.half, o.alignY || o.align);
     if (!AX.cells.length || !AY.cells.length) return { error: 'Die Box ist zu klein für eine Gridfinity-Einheit (mind. 42 mm plus Spiel je Richtung).' };
-    const bx = o.bedX - (o.stack ? o.towerReserve : 0), by = o.bedY;
     const sep = o.spacers === 'separate';
     const gX = sep ? { ...AX, mLow: 0, mHigh: 0 } : AX, gY = sep ? { ...AY, mLow: 0, mHigh: 0 } : AY;
     const ox = sep ? AX.mLow : 0, oy = sep ? AY.mLow : 0;
+    // Passt alles nebeneinander auf ein Druckbett, wird nicht gestapelt: ein Material, kein Prime-Tower
+    if (sep) {
+      const flat = flatSplit(gX, gY, o.bedX, o.bedY);
+      if (flat) {
+        const r = finish(AX, AY, flat, ox, oy, sep, { ...o, stack: false }, o.bedX, o.bedY, flat.place);
+        if (r.stacks.length === 1) return { ...r, flat: true };
+      }
+    }
+    const bx = o.bedX - (o.stack ? o.towerReserve : 0), by = o.bedY;
     let best = null;
     if (o.stack && sep) best = stackSplit(gX, gY, bx, by, o);
     if (!best) for (const [lx, ly] of [[bx, by], [by, bx]]) {
@@ -346,6 +363,11 @@ const GF = (() => {
       if (!best || cnt < best.cnt) best = { sx, sy, cnt };
     }
     if (!best) return { error: 'Eine einzelne Zelle mit Abstandshalter passt nicht aufs Druckbett. Druckbettmaße prüfen.' };
+    return finish(AX, AY, best, ox, oy, sep, o, bx, by, null);
+  }
+
+  // Platten, Typen, Druckjobs und Leisten aus einer gewählten Aufteilung
+  function finish(AX, AY, best, ox, oy, sep, o, bx, by, flatPlace) {
     const pieces = makePieces(best.sx, best.sy, ox, oy, sep);
     // identical piece types
     const types = new Map();
@@ -356,7 +378,10 @@ const GF = (() => {
       p.type = types.get(k);
     }
     for (const t of types.values()) t.tiles = pieceTiles(t.rep, o.cornerR);
-    const stacks = o.stack ? buildStacks(pieces, o) : pieces.map((p, i) => ({ items: [{ p, dx: 0, dy: 0 }], label: 'J' + (i + 1) }));
+    const stacks = flatPlace
+      ? [{ label: 'J1', flat: true, bed: { w: flatPlace.W, d: flatPlace.D }, foot: { w: flatPlace.fw, d: flatPlace.fd },
+          items: flatPlace.items.map((q) => ({ p: pieces[q.i], rot: q.rot, flip: 0, lv: 0, dx: q.x, dy: q.y })) }]
+      : o.stack ? buildStacks(pieces, o) : pieces.map((p, i) => ({ items: [{ p, dx: 0, dy: 0 }], label: 'J' + (i + 1) }));
     const totalW0 = AX.cells.reduce((a, b) => a + b, 0) + AX.mLow + AX.mHigh, totalD0 = AY.cells.reduce((a, b) => a + b, 0) + AY.mLow + AY.mHigh;
     // spacers: try full-length strips first, split them shorter until they fit next to the plates
     let spacers = { list: [], types: [] }, jobs = packSpacers(stacks.slice(), spacers, bx, by, o);
@@ -371,6 +396,54 @@ const GF = (() => {
       spacers = best.sp; jobs = best.jb;
     }
     return { AX, AY, pieces, types: [...types.values()], stacks: jobs, spacers, totalW: AX.cells.reduce((a, b) => a + b, 0) + AX.mLow + AX.mHigh, totalD: AY.cells.reduce((a, b) => a + b, 0) + AY.mLow + AY.mHigh };
+  }
+
+  // Zerlegungsvorschläge einer Achse in Gruppen <= L
+  function axisCands(ax, L) {
+    const n = ax.cells.length, total = ax.cells.reduce((a, b) => a + b, 0), minParts = Math.max(1, Math.ceil(total / L - 1e-9));
+    const maxPart = Math.max(1, Math.floor(L / (PITCH / 2) + 1e-9));
+    return partitions(n, maxPart, Math.min(n, minParts + 2)).map((sz) => cutAxis(ax, sz)).filter((gs) => gs.every((g) => g.width <= L + 1e-9));
+  }
+  // Rechtecke in Reihen aufs Bett legen (Drehung erlaubt), Abstand g; null wenn es nicht passt
+  function shelfPack(rects, W, D, g) {
+    const order = rects.map((r, i) => ({ ...r, i })).sort((a, b) => Math.min(b.w, b.d) - Math.min(a.w, a.d) || b.w * b.d - a.w * a.d);
+    const shelves = [], out = [];
+    let yTop = 0, fw = 0;
+    for (const r of order) {
+      let placed = null;
+      for (const rot of [0, 1]) {
+        const w = rot ? r.d : r.w, d = rot ? r.w : r.d;
+        const sh = shelves.find((q) => q.x + w <= W + 1e-6 && d <= q.h + 1e-6);
+        if (sh) { placed = { i: r.i, rot, x: sh.x, y: sh.y }; sh.x += w + g; fw = Math.max(fw, sh.x - g); break; }
+      }
+      if (!placed) for (const rot of [0, 1]) {
+        const w = rot ? r.d : r.w, d = rot ? r.w : r.d;
+        if (w <= W + 1e-6 && yTop + d <= D + 1e-6) {
+          shelves.push({ y: yTop, h: d, x: w + g }); placed = { i: r.i, rot, x: 0, y: yTop };
+          yTop += d + g; fw = Math.max(fw, w); break;
+        }
+      }
+      if (!placed) return null;
+      out.push(placed);
+    }
+    return { items: out.sort((a, b) => a.i - b.i), fw, fd: yTop - g };
+  }
+  // Wenigste Platten, die zusammen flach auf ein Bett passen (ohne Stapeln)
+  function flatSplit(gX, gY, BX, BY) {
+    const L = Math.max(BX, BY), combos = [];
+    for (const sx of axisCands(gX, L)) for (const sy of axisCands(gY, L)) combos.push({ sx, sy, n: sx.length * sy.length });
+    combos.sort((a, b) => a.n - b.n);
+    for (const c of combos) {
+      if (c.n > 12) break;
+      let area = 0; const rects = [];
+      for (const gy of c.sy) for (const gx of c.sx) { rects.push({ w: gx.width, d: gy.width }); area += gx.width * gy.width; }
+      if (area > BX * BY) continue;
+      for (const [W, D] of [[BX, BY], [BY, BX]]) {
+        const pk = shelfPack(rects, W, D, 3);
+        if (pk) return { sx: c.sx, sy: c.sy, cnt: c.n, place: { ...pk, W, D } };
+      }
+    }
+    return null;
   }
 
   // Aufteilung so wählen, dass die Platten aufeinander passen: erst möglichst wenige Stapel (Druckjobs),
@@ -533,9 +606,13 @@ const GF = (() => {
     const g = 3;
     stacks.forEach(st => {
       st.spacers = [];
-      const p = st.items[0].p, w = p.w, d = p.d;
-      const [bx, by] = (w <= BX + 1e-6 && d <= BY + 1e-6) ? [BX, BY] : [BY, BX];
-      st.bed = { w: bx, d: by };
+      let w, d, bx, by;
+      if (st.flat) { w = st.foot.w; d = st.foot.d; bx = st.bed.w; by = st.bed.d; }
+      else {
+        const p = st.items[0].p; w = p.w; d = p.d;
+        [bx, by] = (w <= BX + 1e-6 && d <= BY + 1e-6) ? [BX, BY] : [BY, BX];
+        st.bed = { w: bx, d: by };
+      }
       st.regions = [{ x: w + g, y: 0, W: bx - w - g, H: by, lanes: [] }, { x: 0, y: d + g, W: w, H: by - d - g, lanes: [] }].filter(r => r.W > 0.5 && r.H > 0.5);
     });
     const fit = (st, tw) => {
@@ -602,16 +679,17 @@ const GF = (() => {
     const pla = new Mesh(), petg = new Mesh(), gap = sepGap(o), per = H + gap;
     stack.items.forEach((it, k) => {
       const base = it.rot ? rotTiles(it.p.type.tiles, it.p.d) : it.p.type.tiles;
+      const lvk = it.lv ?? k;
       if (it.flip) { // PETG-Wendeplatte: Platte bauen und kopfüber an ihren Platz legen (180° um x, echte Drehung)
         const tmp = new Mesh(); addPlate(tmp, base, 0);
-        const dd = it.rot ? it.p.w : it.p.d, z0 = k * per, V = tmp.v, F = tmp.f;
+        const dd = it.rot ? it.p.w : it.p.d, z0 = lvk * per, V = tmp.v, F = tmp.f;
         const P = (i) => [V[3 * i] + it.dx, dd - V[3 * i + 1] + it.dy, z0 + H - V[3 * i + 2]];
         for (let q = 0; q < F.length; q += 3) petg.tri(P(F[q]), P(F[q + 1]), P(F[q + 2]));
         return;
       }
       const tiles = base.map(t => ({ ...t, x0: t.x0 + it.dx, x1: t.x1 + it.dx, y0: t.y0 + it.dy, y1: t.y1 + it.dy }));
-      addPlate(pla, tiles, k * per);
-      if (k > 0 && o.sepStyle !== 'flip') {
+      addPlate(pla, tiles, lvk * per);
+      if (lvk > 0 && o.sepStyle !== 'flip') {
         if (o.sepStyle === 'sheet') { // one continuous PETG foil over the whole footprint of the upper plate
           const sheet = tiles.map(t => ({ ...t, pocket: false, nbPocket: [false, false, false, false] }));
           addPlate(petg, sheet, (k - 1) * per + H, o.sepT);
@@ -632,7 +710,8 @@ const GF = (() => {
       }
       hs = Math.max(hs, lv * perS + sh);
     }
-    const hp = stack.items.length ? stack.items.length * H + (stack.items.length - 1) * gap : 0;
+    const nl = stack.items.reduce((a, it, k) => Math.max(a, (it.lv ?? k) + 1), 0);
+    const hp = nl ? nl * H + (nl - 1) * gap : 0;
     return { pla, petg, height: Math.max(hp, hs) };
   }
 
@@ -780,7 +859,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;

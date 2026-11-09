@@ -54,6 +54,9 @@
 
   const steps = ['Maße', 'Raster', 'Drucken'];
   const isDesk = $derived(use.id === 'desk');
+  // nächstkleineres / nächstgrößeres Maß, bei dem das Raster ohne Leisten aufgeht
+  const fitW = $derived(GF.fitSizes(Number(o.boxW) || 0, isDesk ? 0 : Number(o.clearance) || 0, o.half));
+  const fitD = $derived(GF.fitSizes(Number(o.boxD) || 0, isDesk ? 0 : Number(o.clearance) || 0, o.half));
   const marg = $derived(R.error ? '' : `links ${fmt(R.AX.mLow + R.AX.gapLow, 1)} · rechts ${fmt(R.AX.mHigh + R.AX.gapHigh, 1)} · vorne ${fmt(R.AY.mLow + R.AY.gapLow, 1)} · hinten ${fmt(R.AY.mHigh + R.AY.gapHigh, 1)} mm`);
   const POS: [Align, Align, string][] = [
     ['start', 'end', 'hinten links'], ['center', 'end', 'hinten mittig'], ['end', 'end', 'hinten rechts'],
@@ -122,6 +125,16 @@
           <span class="x">×</span>
           <label data-tip={TIPS.boxD}><span>Tiefe</span><span class="in"><input type="number" inputmode="decimal" min="42" step="0.5" bind:value={o.boxD}><em>mm</em></span></label>
         </div>
+        <div class="fits" data-tip={TIPS.fit}>
+          {#each [['boxW', fitW], ['boxD', fitD]] as [k, f]}
+            {@const ff = f as any}
+            <div>
+              <span class="fl">{ff.exact ? '✓ geht genau auf' : isDesk ? 'Raster genau' : 'ohne Leisten'}</span>
+              {#if ff.lo && !ff.exact}<button type="button" onclick={() => ((o as any)[k as string] = ff.lo)}>↓ {fmt(ff.lo)}</button>{/if}
+              <button type="button" onclick={() => ((o as any)[k as string] = ff.hi)}>↑ {fmt(ff.hi)}</button>
+            </div>
+          {/each}
+        </div>
         <p class="hint">{use.hint}</p>
         {#if !isDesk}
           <div class="row2">
@@ -151,8 +164,12 @@
         {#if marg}<p class="hint">Rand: {marg}</p>{/if}
       {:else}
         <h2>So wird gedruckt</h2>
+        {#if R.flat}
+          <p class="flat" data-tip={TIPS.flat}>✓ Passt flach auf ein Druckbett. Kein Stapeln nötig: nur PLA, kein PETG, kein Prime-Tower.</p>
+        {:else}
         <label class="tog" data-tip={TIPS.stack}><input type="checkbox" bind:checked={o.stack}> Platten stapeln (PLA + PETG)</label>
-        {#if o.stack}
+        {/if}
+        {#if o.stack && !R.flat}
           <div class="f" data-tip={TIPS.sepStyle}>Trennung zwischen den Platten
             <div class="seg">
               <button type="button" aria-pressed={o.sepStyle !== 'flip'} onclick={() => (o.sepStyle = 'grow')}>Aus Stegspitze</button>
@@ -292,6 +309,12 @@
   .in em { font: 500 13px var(--f-mono); font-style: normal; color: #8f867c; }
   .x { font: 400 22px var(--f-mono); color: #5e564e; padding-bottom: 12px; }
   .hint { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.45; }
+  .fits { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: -6px; }
+  .fits div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font: 500 11.5px var(--f-mono); color: #8f867c; }
+  .fits .fl { width: 100%; font-family: var(--f-ui); font-size: 11.5px; }
+  .fits button { all: unset; cursor: pointer; color: #d9d0c5; border-bottom: 1px dotted rgba(242,166,90,.5); }
+  .fits button:hover, .fits button:focus-visible { color: var(--accent); }
+  .flat { margin: 0; font-size: 13.5px; color: #d9d0c5; background: rgba(242,166,90,.08); border: 1px solid rgba(242,166,90,.25); border-radius: 10px; padding: 10px 12px; }
   .row2, .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .f { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); min-width: 0; }
   .f input { font: 500 15px var(--f-mono); color: var(--ink); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; width: 100%; min-width: 0; }

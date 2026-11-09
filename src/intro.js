@@ -435,7 +435,18 @@ export function createIntro({ onDone }) {
     const W = parseFloat(String(inW.value).replace(',', '.')), D = parseFloat(String(inD.value).replace(',', '.'));
     return { W: isFinite(W) ? W : 0, D: isFinite(D) ? D : 0 };
   }
+  // klein unter den Feldern: Maße, bei denen das Raster genau aufgeht (keine Leisten)
+  function fits() {
+    const { W, D } = readDims(), c = planOptions(sel.use.id, 0, 0).clearance;
+    for (const [id, v, inp] of [['iFitW', W, inW], ['iFitD', D, inD]]) {
+      const f = GF.fitSizes(v, c, false), el = $(id);
+      const lab = f.exact ? '✓ geht genau auf' : sel.use.id === 'desk' ? 'Raster genau' : 'ohne Leisten';
+      el.innerHTML = `<span class="fl">${lab}</span>` + (f.lo && !f.exact ? `<button type="button" data-v="${f.lo}">↓ ${fmt(f.lo)}</button>` : '') + `<button type="button" data-v="${f.hi}">↑ ${fmt(f.hi)}</button>`;
+      el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { inp.value = b.dataset.v; onInput(); }));
+    }
+  }
   function stats() {
+    fits();
     const R = sel.R, el = $('iStats'), go = $('iGo');
     if (!R || R.error) {
       el.innerHTML = `<span class="i-err">${R ? R.error : ''}</span>`; go.disabled = true; return;

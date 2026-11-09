@@ -52,6 +52,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .i-in input::-webkit-outer-spin-button, .i-in input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .i-in em { font: 500 13px var(--f-mono); font-style: normal; color: #8f867c; }
 .i-x { font: 400 22px var(--f-mono); color: #5e564e; padding-bottom: 12px; }
+.i-fits { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.i-fits div { display: flex; flex-wrap: wrap; gap: 2px 8px; font: 500 11.5px var(--f-mono); color: #8f867c; }
+.i-fits .fl { width: 100%; font-family: var(--f-ui); }
+.i-fits button { all: unset; cursor: pointer; color: #d9d0c5; border-bottom: 1px dotted rgba(242,166,90,.5); }
+.i-fits button:hover, .i-fits button:focus-visible { color: #f2a65a; }
 .i-hint { font-size: 13px; color: #a0968b; margin: 14px 0 18px; line-height: 1.45; }
 .i-stats { display: flex; gap: 8px; margin-bottom: 20px; min-height: 58px; }
 .i-stats div { flex: 1; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); border-radius: 10px; padding: 8px 10px; }

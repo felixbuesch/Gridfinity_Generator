@@ -74,6 +74,8 @@ Die Netze werden **direkt aus Dreiecken** aufgebaut, ohne Boolesche Operationen.
    - Leisten mit weniger als 2 × Schiene + 1,5 mm Breite werden massiv.
    - Die Box-Eckradien werden an den Leistenenden abgerundet.
 5. **Ein Einsatz = ein Druckjob (seit 8. Nov. 2026, Felix' Vorgabe):** Bei aktivem Stapeldruck wählt `stackSplit` die Aufteilung so, dass alle Platten in **einen** Stapel passen (danach: wenigste Platten, dann gleichmäßig). Eine Platte darf nur auf eine Platte, deren Zellen sie exakt überdeckt (`placeOn`/`seqFit`), sonst bräuchte das PETG Stützen. Platten dürfen um 90° gedreht gestapelt werden (`rotTiles`). Standard „Max. Platten je Stapel“ = 30.
+5b. **Flach vor Stapeln (Felix):** Passen alle Platten samt Leisten nebeneinander auf ein Druckbett (`flatSplit` + `shelfPack`, Drehung erlaubt, ganzes Bett ohne Prime-Tower-Reserve), wird nicht gestapelt: nur PLA, kein PETG, ein Druckjob „J1“ (`R.flat`).
+5c. **Maße ohne Leisten (Felix):** Unter Breite/Tiefe (Startbildschirm und Planer) steht klein das nächstkleinere und nächstgrößere Innenmaß, bei dem das Raster genau aufgeht (`fitSizes`, Schritt 42 mm bzw. 21 mm mit halben Zellen, plus Spiel). Klick übernimmt das Maß.
 6. **Stapel (`buildStacks`, alt):** gierig, größte Platte zuerst. Platte B darf auf Platte A, wenn ihre Zellen deckungsgleich auf A liegen (`axisFit`). Die Stapelhöhe ist durch Druckhöhe und `maxStack` begrenzt. Ist Stapeln aus, ist jede Platte ein eigener Job.
 6. **Leisten aufs Plattenbett (`packSpacers`):**
    - Gleich lange Leisten werden zu **Türmen** gestapelt, wenn Stapeln an ist. Zwischen zwei Leisten liegt eine PETG-Platte mit genau ihrer Grundfläche.

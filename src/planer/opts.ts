@@ -61,6 +61,8 @@ export const TIPS: Record<string, string> = {
   maxStack: 'Höchstens so viele Platten pro Druckjob. Weniger heißt kürzere Jobs, aber evtl. mehr Druckjobs.',
   towerReserve: 'Platz, der auf dem Bett für den Prime-Tower frei bleibt. Er wird beim Wechsel PLA/PETG gebraucht.',
   toIntro: 'Zurück zur Auswahl Schreibtisch, Schublade oder Box.',
+  fit: 'Bei diesen Innenmaßen geht das Raster genau auf und es braucht keine Leisten: ↓ das nächstkleinere Maß, ↑ das nächstgrößere (eine Reihe mehr). Klick übernimmt das Maß.',
+  flat: 'Alle Platten passen nebeneinander auf ein Druckbett. Dann wird nicht gestapelt: nur PLA, kein PETG, kein Prime-Tower.',
   profi: 'Alle weiteren Einstellungen: Leistenform, Drucker, PETG-Trennschicht.',
   zip: 'Alle Druckbetten, Einzelteile und eine Anleitung als STL/3MF in einem ZIP.',
   job: 'Nur diese Druckdatei als ZIP laden (PLA- und PETG-STL plus 3MF fürs Bambu Studio).',

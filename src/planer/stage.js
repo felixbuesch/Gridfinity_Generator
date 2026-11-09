@@ -255,7 +255,7 @@ export default class Stage {
 
   // ---------- Schritte und Kamera ----------
   goStep(n, instant) {
-    this.step = n;
+    this.step = n; this.beds.visible = n === 3; // Druckbetten nur im Schritt Drucken
     const target = n === 3 && this.bedBox && !this.bedBox.isEmpty() ? this.bedBox : new THREE.Box3().setFromObject(this.root);
     if (target.isEmpty()) return;
     const dir = n === 2 ? [0, -0.18, 1] : n === 3 ? [-0.35, -1.1, 1.0] : [-0.32, -1.15, 0.95];

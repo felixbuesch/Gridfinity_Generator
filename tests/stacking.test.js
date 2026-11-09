@@ -32,6 +32,7 @@ describe.each(SIZES.flatMap(([w, d]) => [[w, d, 'grow'], [w, d, 'flip']]))('Eins
   });
 
   it('jede Platte liegt zellgenau auf der darunter', () => {
+    if (R.flat) return; // flach nebeneinander, nichts gestapelt
     const items = plateJobs[0].items;
     for (let k = 1; k < items.length; k++) {
       const up = placed(items[k]), lo = placed(items[k - 1]);
@@ -97,5 +98,42 @@ describe('Wendeplatte: Leisten', () => {
   it('ohne Wendeplatte bleiben die Leisten-Türme wie bisher (eigene Höhe, flache PETG-Lagen)', () => {
     const o2 = { ...o, sepStyle: 'grow' }, R2 = GF.compute(o2);
     expect(R2.spacers.types[0].h).toBeCloseTo(2.4, 6);
+  });
+});
+
+describe('flach statt stapeln', () => {
+  const overlap = (a, b) => a.x0 < b.x1 - 1e-6 && b.x0 < a.x1 - 1e-6 && a.y0 < b.y1 - 1e-6 && b.y0 < a.y1 - 1e-6;
+  it.each([[150, 100], [380, 90], [200, 120], [379, 85]])('%s × %s mm passt ohne Stapeln auf ein Bett', (w, d) => {
+    const o = { ...BASE, boxW: w, boxD: d }, R = GF.compute(o);
+    expect(R.flat).toBe(true);
+    expect(R.stacks).toHaveLength(1);
+    const st = R.stacks[0], rects = st.items.map((it) => {
+      const pw = it.rot ? it.p.d : it.p.w, pd = it.rot ? it.p.w : it.p.d;
+      return { x0: it.dx, y0: it.dy, x1: it.dx + pw, y1: it.dy + pd };
+    });
+    // alles auf dem ganzen Bett (ohne Prime-Tower-Reserve), nichts überlappt
+    for (const r of rects) { expect(r.x1).toBeLessThanOrEqual(st.bed.w + 1e-6); expect(r.y1).toBeLessThanOrEqual(st.bed.d + 1e-6); }
+    for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) expect(overlap(rects[i], rects[j])).toBe(false);
+    const m = GF.stackMeshes(st, o);
+    expect(m.petg.f.length).toBe(0);         // nur PLA
+    expect(m.height).toBeCloseTo(GF.H, 6);   // eine Lage
+  });
+  it('großer Einsatz wird weiter gestapelt', () => {
+    expect(GF.compute({ ...BASE, boxW: 400, boxD: 300 }).flat).toBeFalsy();
+  });
+});
+
+describe('Maße ohne Leisten', () => {
+  it('nächstkleineres und nächstgrößeres Maß', () => {
+    expect(GF.fitSizes(400, 1, false)).toMatchObject({ lo: 379, hi: 421, exact: false });
+    expect(GF.fitSizes(379, 1, false)).toMatchObject({ lo: 379, hi: 421, exact: true });
+    expect(GF.fitSizes(400, 1, true)).toMatchObject({ lo: 400, hi: 421, exact: true });
+    expect(GF.fitSizes(30, 1, false)).toMatchObject({ lo: null, hi: 43 });
+  });
+  it('beim kleineren Maß bleibt kein Rest für Leisten', () => {
+    for (const v of [137, 400, 555.5]) {
+      const f = GF.fitSizes(v, 1, false), R = GF.compute({ ...BASE, boxW: f.lo, boxD: f.hi });
+      expect(R.AX.mLow + R.AX.mHigh).toBe(0); expect(R.AY.mLow + R.AY.mHigh).toBe(0);
+    }
   });
 });

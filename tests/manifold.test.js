@@ -67,7 +67,7 @@ describe.each(cases)('Box $boxW × $boxD, $spacers, $sepStyle', (o) => {
     R.stacks.forEach((s) => {
       const m = GF.stackMeshes(s, o);
       check(m.pla, `${s.label} PLA`);
-      const stacked = s.items.length > 1 || s.spacers.some((e) => e.level > 0);
+      const stacked = !R.flat && (s.items.length > 1 || s.spacers.some((e) => e.level > 0));
       if (stacked) check(m.petg, `${s.label} PETG`);
       else expect(m.petg.f.length).toBe(0);
       expect(m.height).toBeLessThanOrEqual(o.bedZ + 1e-6);
@@ -86,7 +86,8 @@ describe('Layout', () => {
           expect(it.p.w + it.dx).toBeLessThanOrEqual(bx + 1e-6);
           expect(it.p.d + it.dy).toBeLessThanOrEqual(by + 1e-6);
         }
-        expect(Math.min(bx, by)).toBeLessThanOrEqual(Math.min(o.bedX - o.towerReserve, o.bedY) + 1e-6);
+        // flach (ohne PETG) darf das ganze Bett nutzen, gestapelt bleibt Platz für den Prime-Tower
+        expect(Math.min(bx, by)).toBeLessThanOrEqual(Math.min(R.flat ? o.bedX : o.bedX - o.towerReserve, o.bedY) + 1e-6);
       }
     }
   });
