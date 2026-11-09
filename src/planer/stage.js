@@ -146,6 +146,7 @@ export default class Stage {
     if (GF.flipMode(o)) R.stacks.forEach((s) => s.spacers.forEach((e) => { if ((e.level || 0) % 2) flipped.add(e.sp); }));
     const gget = (key, which) => { const k = key + which; if (!geos.has(k)) { const g = toGeo(P.mesh(key)[which]); g.userData.shared = false; geos.set(k, g); } return geos.get(k); };
     R.pieces.forEach((p, i) => {
+      if (p.copy) return; // weitere Exemplare nur im Druckbett, in der Schublade eins
       const base = flipped.has(p) ? this.mats.petg : this.mats.pla;
       const m = new THREE.Mesh(gget(plateKey(P, p), 'pla'), base);
       m.position.set(ox + p.x, oy + p.y, 0); m.castShadow = m.receiveShadow = true;
@@ -153,6 +154,7 @@ export default class Stage {
       this.addHit(ox + p.x, oy + p.y, p.w, p.d, 4.65, m.userData);
     });
     R.spacers.list.forEach((s, i) => {
+      if (s.copy) return;
       const base = flipped.has(s) ? this.mats.petg : this.mats.spacer;
       const m = new THREE.Mesh(gget(spacerKey(P, s), 'spacer'), base);
       m.position.set(ox + s.x0, oy + s.y0, 0); m.castShadow = m.receiveShadow = true;

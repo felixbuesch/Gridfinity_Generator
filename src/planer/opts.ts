@@ -6,7 +6,7 @@ export interface Opts {
   boxW: number; boxD: number; clearance: number; cornerR: number; minSpacer: number; half: boolean;
   spacers: 'separate' | 'integrated'; spacerStyle: 'ladder' | 'solid'; alignX: Align; alignY: Align;
   spacerH: number; rail: number; ribPitch: number; bedX: number; bedY: number; bedZ: number;
-  stack: boolean; sepStyle: 'grow' | 'ring' | 'wedge' | 'sheet' | 'flip'; sepT: number; overhang: number; maxStack: number; towerReserve: number;
+  copies: number; stack: boolean; sepStyle: 'grow' | 'ring' | 'wedge' | 'sheet' | 'flip'; sepT: number; overhang: number; maxStack: number; towerReserve: number;
 }
 
 export const defaults = (): Opts => ({ ...(DEFAULTS as Opts) });
@@ -26,6 +26,7 @@ export function clean(o: Opts) {
   for (const k of Object.keys(d) as (keyof Opts)[]) if (typeof d[k] === 'number') r[k] = num(o[k], 0);
   const c = r as unknown as Opts & { wedgeDepth: number };
   c.maxStack = Math.max(1, Math.round(c.maxStack));
+  c.copies = Math.max(1, Math.min(20, Math.round(c.copies || 1)));
   c.sepT = Math.max(0.1, c.sepT);
   c.spacerH = Math.max(0.6, c.spacerH || 4.65);
   c.rail = Math.max(0.8, c.rail); c.ribPitch = Math.max(8, c.ribPitch);
@@ -62,6 +63,7 @@ export const TIPS: Record<string, string> = {
   towerReserve: 'Platz, der auf dem Bett für den Prime-Tower frei bleibt. Er wird beim Wechsel PLA/PETG gebraucht.',
   toIntro: 'Zurück zur Auswahl Schreibtisch, Schublade oder Box.',
   fit: 'Bei diesen Innenmaßen geht das Raster genau auf und es braucht keine Leisten: ↓ das nächstkleinere Maß, ↑ das nächstgrößere (eine Reihe mehr). Klick übernimmt das Maß.',
+  copies: 'So oft wird der ganze Einsatz mit Rahmen (Platten + Leisten) gedruckt, z. B. für mehrere gleiche Schubladen. Alle Exemplare werden zusammen so dicht wie möglich aufs Bett gepackt.',
   flat: 'Alle Platten passen nebeneinander auf ein Druckbett. Dann wird nicht gestapelt: nur PLA, kein PETG, kein Prime-Tower.',
   profi: 'Alle weiteren Einstellungen: Leistenform, Drucker, PETG-Trennschicht.',
   zip: 'Alle Druckbetten, Einzelteile und eine Anleitung als STL/3MF in einem ZIP.',

@@ -326,6 +326,14 @@ const GF = (() => {
       i += k; return g;
     });
   }
+  // Anzahl gleicher Einsätze (mit Rahmen), die zusammen gedruckt werden
+  const nCopies = (o) => Math.max(1, Math.min(20, Math.round(o.copies || 1)));
+  function copiesOf(arr, n) {
+    if (n <= 1) return arr.map((a) => ({ ...a, copy: 0 }));
+    const out = [];
+    for (let c = 0; c < n; c++) for (const a of arr) out.push({ ...a, copy: c });
+    return out;
+  }
   function makePieces(sx, sy, ox, oy, sep) {
     const pieces = [];
     sy.forEach((gy, jy) => sx.forEach((gx, ix) => {
@@ -347,7 +355,7 @@ const GF = (() => {
     const ox = sep ? AX.mLow : 0, oy = sep ? AY.mLow : 0;
     // Passt alles nebeneinander auf ein Druckbett, wird nicht gestapelt: ein Material, kein Prime-Tower
     if (sep) {
-      const flat = flatSplit(gX, gY, o.bedX, o.bedY);
+      const flat = flatSplit(gX, gY, o.bedX, o.bedY, nCopies(o));
       if (flat) {
         const r = finish(AX, AY, flat, ox, oy, sep, { ...o, stack: false }, o.bedX, o.bedY, flat.place);
         if (r.stacks.length === 1) return { ...r, flat: true };
@@ -368,7 +376,7 @@ const GF = (() => {
 
   // Platten, Typen, Druckjobs und Leisten aus einer gewählten Aufteilung
   function finish(AX, AY, best, ox, oy, sep, o, bx, by, flatPlace) {
-    const pieces = makePieces(best.sx, best.sy, ox, oy, sep);
+    const pieces = copiesOf(makePieces(best.sx, best.sy, ox, oy, sep), nCopies(o));
     // identical piece types
     const types = new Map();
     for (const p of pieces) {
@@ -429,14 +437,14 @@ const GF = (() => {
     return { items: out.sort((a, b) => a.i - b.i), fw, fd: yTop - g };
   }
   // Wenigste Platten, die zusammen flach auf ein Bett passen (ohne Stapeln)
-  function flatSplit(gX, gY, BX, BY) {
+  function flatSplit(gX, gY, BX, BY, nc = 1) {
     const L = Math.max(BX, BY), combos = [];
     for (const sx of axisCands(gX, L)) for (const sy of axisCands(gY, L)) combos.push({ sx, sy, n: sx.length * sy.length });
     combos.sort((a, b) => a.n - b.n);
     for (const c of combos) {
-      if (c.n > 12) break;
+      if (c.n * nc > 24) break;
       let area = 0; const rects = [];
-      for (const gy of c.sy) for (const gx of c.sx) { rects.push({ w: gx.width, d: gy.width }); area += gx.width * gy.width; }
+      for (let k = 0; k < nc; k++) for (const gy of c.sy) for (const gx of c.sx) { rects.push({ w: gx.width, d: gy.width }); area += gx.width * gy.width; }
       if (area > BX * BY) continue;
       for (const [W, D] of [[BX, BY], [BY, BX]]) {
         const pk = shelfPack(rects, W, D, 3);
@@ -463,7 +471,7 @@ const GF = (() => {
       if (best && best.stacks === 1 && c.n > best.n) break; // ein Stapel gefunden, mehr Platten bringen nichts
       if (best && c.n > best.n + 12) break;
       if (!c.sx.every((gx) => c.sy.every((gy) => fits(gx.width, gy.width)))) continue;
-      const st = buildStacks(makePieces(c.sx, c.sy, 0, 0, true), o).length;
+      const st = buildStacks(copiesOf(makePieces(c.sx, c.sy, 0, 0, true), nCopies(o)), o).length;
       const even = c.sx.reduce((a, g) => a + g.width * g.width, 0) + c.sy.reduce((a, g) => a + g.width * g.width, 0);
       if (!best || st < best.stacks || (st === best.stacks && (c.n < best.n || (c.n === best.n && even < best.even)))) best = { sx: c.sx, sy: c.sy, n: c.n, cnt: c.n, stacks: st, even };
     }
@@ -529,7 +537,8 @@ const GF = (() => {
     const ya = s > 0 ? s : 0, yb = n > 0 ? D - n : D;
     if (w > 0) strip(0, ya, w, yb, false, s > 0 ? null : [0], n > 0 ? null : [3], 'W');
     if (e > 0) strip(W - e, ya, W, yb, false, s > 0 ? null : [1], n > 0 ? null : [2], 'E');
-    const types = new Map();
+    const types = new Map(), all = copiesOf(list, nCopies(o));
+    list.length = 0; list.push(...all);
     for (const sp of list) {
       const w2 = sp.x1 - sp.x0, h2 = sp.y1 - sp.y0;
       const key = w2.toFixed(2) + 'x' + h2.toFixed(2) + JSON.stringify(sp.rounds);
@@ -859,7 +868,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, nCopies, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;

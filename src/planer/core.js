@@ -85,6 +85,7 @@ export function readme(P, use) {
   const { R, o } = P, L = [];
   L.push('Gridfinity Planer – Export', '');
   L.push(`${use ? use.area : 'Innenmaß'}: ${o.boxW} x ${o.boxD} mm, Spiel je Achse ${o.clearance} mm, Raster liegt: ${POSNAME.y[o.alignY]} ${POSNAME.x[o.alignX]}`);
+  if (GF.nCopies(o) > 1) L.push(`Anzahl: ${GF.nCopies(o)} gleiche Einsätze (Platten und Leisten mehrfach in den Druckbetten)`);
   L.push(`Raster: ${R.AX.cells.length} x ${R.AY.cells.length} Zellen (${R.AX.cells.join('+')} / ${R.AY.cells.join('+')} mm)`);
   L.push(`Abstandshalter links/rechts: ${R.AX.mLow} / ${R.AX.mHigh} mm, vorne/hinten: ${R.AY.mLow} / ${R.AY.mHigh} mm (${o.spacers === 'separate' ? 'separate Leisten, ' + (o.spacerStyle === 'solid' ? 'voll' : 'Leiter') + ', Höhe ' + o.spacerH + ' mm' : 'in Platten integriert'})`);
   L.push(`Druckbett: ${o.bedX} x ${o.bedY} x ${o.bedZ} mm${o.stack ? ', Reserve Prime-Tower ' + o.towerReserve + ' mm' : ''}`, '');

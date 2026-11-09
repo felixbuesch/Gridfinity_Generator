@@ -164,6 +164,14 @@
         {#if marg}<p class="hint">Rand: {marg}</p>{/if}
       {:else}
         <h2>So wird gedruckt</h2>
+        <div class="copies" data-tip={TIPS.copies}>
+          <span>Anzahl Einsätze <em>mit Rahmen</em></span>
+          <div class="stepper">
+            <button type="button" aria-label="Einen Einsatz weniger" disabled={o.copies <= 1} onclick={() => (o.copies = Math.max(1, (o.copies || 1) - 1))}>−</button>
+            <b>{o.copies || 1}</b>
+            <button type="button" aria-label="Einen Einsatz mehr" disabled={o.copies >= 20} onclick={() => (o.copies = Math.min(20, (o.copies || 1) + 1))}>+</button>
+          </div>
+        </div>
         {#if R.flat}
           <p class="flat" data-tip={TIPS.flat}>✓ Passt flach auf ein Druckbett. Kein Stapeln nötig: nur PLA, kein PETG, kein Prime-Tower.</p>
         {:else}
@@ -218,7 +226,7 @@
       {:else if S}
         <div class="stats">
           <div><b>{S.nx} × {S.ny}</b><span>Felder</span></div>
-          <div><b>{S.plates}{S.spacers ? ' + ' + S.spacers : ''}</b><span>Platten{S.spacers ? ' + Leisten' : ''}</span></div>
+          <div><b>{S.plates}{S.spacers ? ' + ' + S.spacers : ''}</b><span>Platten{S.spacers ? ' + Leisten' : ''}{(o.copies || 1) > 1 ? ` · ${o.copies} Einsätze` : ''}</span></div>
           <div><b>{S.jobs}</b><span>{S.jobs === 1 ? 'Druckjob' : 'Druckjobs'}</span></div>
           {#if step === 3}<div><b>{fmt(S.pla, 0)} g</b><span>PLA</span></div>{#if S.petg}<div><b>{fmt(S.petg, 0)} g</b><span>PETG{S.flips ? ` · ${S.flips} Platten` : ''}{S.flipSp ? ` + ${S.flipSp} Leisten` : ''}</span></div>{/if}{/if}
         </div>
@@ -314,6 +322,13 @@
   .fits .fl { width: 100%; font-family: var(--f-ui); font-size: 11.5px; }
   .fits button { all: unset; cursor: pointer; color: #d9d0c5; border-bottom: 1px dotted rgba(242,166,90,.5); }
   .fits button:hover, .fits button:focus-visible { color: var(--accent); }
+  .copies { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+  .copies em { font-style: normal; color: var(--muted); font-size: 12.5px; margin-left: 4px; }
+  .stepper { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .stepper button { width: 36px; height: 34px; background: rgba(255,255,255,.04); border: 0; color: var(--ink); font: 600 18px var(--f-ui); cursor: pointer; }
+  .stepper button:hover:not(:disabled) { background: rgba(242,166,90,.18); color: var(--accent); }
+  .stepper button:disabled { opacity: .3; cursor: default; }
+  .stepper b { min-width: 38px; text-align: center; font: 600 17px var(--f-mono); }
   .flat { margin: 0; font-size: 13.5px; color: #d9d0c5; background: rgba(242,166,90,.08); border: 1px solid rgba(242,166,90,.25); border-radius: 10px; padding: 10px 12px; }
   .row2, .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .f { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); min-width: 0; }

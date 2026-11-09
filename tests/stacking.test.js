@@ -137,3 +137,15 @@ describe('Maße ohne Leisten', () => {
     }
   });
 });
+
+describe('mehrere Einsätze', () => {
+  it.each([[150, 100, 3], [400, 300, 3], [300, 200, 4]])('%s × %s mm, %s Stück: alles da, möglichst in einem Druckjob', (w, d, n) => {
+    const one = GF.compute({ ...BASE, boxW: w, boxD: d }), R = GF.compute({ ...BASE, boxW: w, boxD: d, copies: n });
+    expect(R.pieces).toHaveLength(one.pieces.length * n);
+    expect(R.spacers.list).toHaveLength(one.spacers.list.length * n);
+    const placedP = R.stacks.reduce((a, s) => a + s.items.length, 0), placedS = R.stacks.reduce((a, s) => a + s.spacers.length, 0);
+    expect(placedP).toBe(R.pieces.length); expect(placedS).toBe(R.spacers.list.length);
+    expect(R.stacks).toHaveLength(1);
+    for (const s of R.stacks) expect(GF.stackMeshes(s, { ...BASE, boxW: w, boxD: d, copies: n }).height).toBeLessThanOrEqual(256);
+  });
+});
