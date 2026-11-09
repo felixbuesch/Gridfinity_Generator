@@ -302,12 +302,6 @@ export function createIntro({ onDone }) {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 120).rotateX(-Math.PI / 2),
     new THREE.MeshStandardMaterial({ color: 0x15110d, roughness: 0.92, metalness: 0 }));
   floor.position.y = -0.01; floor.receiveShadow = true; scene.add(floor);
-  // schwebende Staubpartikel
-  const NP = 360, pp = new Float32Array(NP * 3);
-  for (let i = 0; i < NP; i++) { pp[3 * i] = (Math.random() - 0.5) * 34; pp[3 * i + 1] = Math.random() * 10; pp[3 * i + 2] = (Math.random() - 0.5) * 22 - 3; }
-  const pgeo = new THREE.BufferGeometry(); pgeo.setAttribute('position', new THREE.BufferAttribute(pp, 3));
-  const particles = new THREE.Points(pgeo, new THREE.PointsMaterial({ color: LAMP, size: 0.035, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false }));
-  scene.add(particles);
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
@@ -518,9 +512,6 @@ export function createIntro({ onDone }) {
       }
       s.label.classList.toggle('on', hovered === s);
     }
-    const pos = particles.geometry.attributes.position;
-    for (let i = 0; i < NP; i++) { let y = pos.array[3 * i + 1] + dt * 0.12; if (y > 10) y = 0; pos.array[3 * i + 1] = y; }
-    pos.needsUpdate = true;
     camera.position.copy(cam.pos); camera.lookAt(cam.tgt);
     composer.render();
   }
