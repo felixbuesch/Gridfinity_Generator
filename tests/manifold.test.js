@@ -92,13 +92,13 @@ describe('Layout', () => {
     }
   });
 
-  it('"Aus Stegspitze": Stapelabstand = H + 2,85/tan(45°) + Basisschicht', () => {
+  it('"Aus Stegspitze": Stapelabstand = H + (2,85 − 0,25)/tan(45°) + Basisschicht', () => {
     const R = GF.compute(BASE);
     const s = R.stacks.find((st) => st.items.length > 1);
     expect(s).toBeTruthy();
     const m = GF.stackMeshes(s, BASE);
     const n = s.items.length;
-    expect(m.height).toBeCloseTo(n * GF.H + (n - 1) * (2.85 + 0.6), 6);
+    expect(m.height).toBeCloseTo(n * GF.H + (n - 1) * (2.85 - 0.25 + 0.6), 6);
   });
 
   it('Gegenprobe: ein Netz mit Loch wird erkannt', () => {

@@ -151,7 +151,7 @@ export default class Stage {
       const m = new THREE.Mesh(gget(plateKey(P, p), 'pla'), base);
       m.position.set(ox + p.x, oy + p.y, 0); m.castShadow = m.receiveShadow = true;
       m.userData = { kind: 'P', idx: i, base }; this.root.add(m); this.pickables.push(m);
-      this.addHit(ox + p.x, oy + p.y, p.w, p.d, 4.65, m.userData);
+      this.addHit(ox + p.x, oy + p.y, p.w, p.d, GF.H, m.userData);
     });
     R.spacers.list.forEach((s, i) => {
       if (s.copy) return;

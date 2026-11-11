@@ -60,7 +60,7 @@ describe('Wendeplatte (PETG-Platte kopfüber)', () => {
     s.items.forEach((it, k) => expect(!!it.flip, `Ebene ${k + 1}`).toBe(k % 2 === 1));
   });
 
-  it('Platten liegen direkt aufeinander: Höhe = Anzahl × 4,65 mm', () => {
+  it('Platten liegen direkt aufeinander: Höhe = Anzahl × H', () => {
     const plates = s.items.length * GF.H, m = GF.stackMeshes({ ...s, spacers: [] }, o);
     expect(m.height).toBeCloseTo(plates, 6);
   });
@@ -147,5 +147,24 @@ describe('mehrere Einsätze', () => {
     expect(placedP).toBe(R.pieces.length); expect(placedS).toBe(R.spacers.list.length);
     expect(R.stacks).toHaveLength(1);
     for (const s of R.stacks) expect(GF.stackMeshes(s, { ...BASE, boxW: w, boxD: d, copies: n }).height).toBeLessThanOrEqual(256);
+  });
+});
+
+describe('flache Stegoberkante (kein Absatz oben)', () => {
+  it('Platte endet überall auf derselben Höhe, Oberkante ist ein durchgehender Kamm', () => {
+    const R = GF.compute({ ...BASE, boxW: 400, boxD: 300, stack: false });
+    const t = R.types.find((x) => x.rep.ax.cells.every((c) => c === 42) && x.rep.ay.cells.every((c) => c === 42));
+    const m = GF.plateMesh(t), v = m.v, f = m.f;
+    let zmax = -Infinity; for (let i = 2; i < v.length; i += 3) zmax = Math.max(zmax, v[i]);
+    expect(zmax).toBeCloseTo(GF.H, 9);
+    // Fläche aller Dreiecke ganz oben = Stegoberkante
+    let top = 0;
+    for (let k = 0; k < f.length; k += 3) {
+      const [a, b, c] = [f[k], f[k + 1], f[k + 2]].map((i) => [v[3 * i], v[3 * i + 1], v[3 * i + 2]]);
+      if ([a, b, c].every((p) => Math.abs(p[2] - GF.H) < 1e-6)) top += Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
+    }
+    const n = t.rep.ax.cells.length * t.rep.ay.cells.length, perim = 4 * 42;
+    // je Zelle mindestens ein 0,25 mm breiter Rand ringsum (Steg 0,5 mm zwischen zwei Zellen)
+    expect(top).toBeGreaterThan(n * perim * 0.25 * 0.95);
   });
 });

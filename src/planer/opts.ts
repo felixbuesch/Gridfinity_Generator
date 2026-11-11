@@ -28,7 +28,7 @@ export function clean(o: Opts) {
   c.maxStack = Math.max(1, Math.round(c.maxStack));
   c.copies = Math.max(1, Math.min(20, Math.round(c.copies || 1)));
   c.sepT = Math.max(0.1, c.sepT);
-  c.spacerH = Math.max(0.6, c.spacerH || 4.65);
+  c.spacerH = Math.max(0.6, c.spacerH || 4.4);
   c.rail = Math.max(0.8, c.rail); c.ribPitch = Math.max(8, c.ribPitch);
   c.wedgeDepth = c.sepStyle === 'wedge' ? 1 : 0;
   return c;
@@ -48,7 +48,7 @@ export const TIPS: Record<string, string> = {
   minSpacer: 'Ist der Rest schmaler als dieser Wert, wird keine Leiste gedruckt und es bleibt ein Spalt.',
   half: 'Passt am Rand noch eine halbe Zelle (21 mm), wird eine halbe Reihe statt einer breiten Leiste eingesetzt.',
   spacerStyle: 'Leiter: zwei dünne Schienen mit Querstreben, sehr wenig Material. Voll: massiver Streifen.',
-  spacerH: 'Höhe der Leisten. Sie müssen nicht so hoch wie die Platten sein (4,65 mm), weil sie nur seitlich anliegen.',
+  spacerH: 'Höhe der Leisten. Sie müssen nicht so hoch wie die Platten sein (4,4 mm), weil sie nur seitlich anliegen.',
   rail: 'Breite der beiden Längsschienen einer Leiter-Leiste. 1,2 mm sind drei Bahnen mit 0,4-mm-Düse.',
   ribPitch: 'Abstand der Querstreben. Größer spart Material, kleiner macht die Leiste steifer.',
   bedX: 'Nutzbare Breite des Druckbetts. X2D mit beiden Düsen: 235,5 mm.',

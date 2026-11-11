@@ -46,7 +46,7 @@ Externe Bibliotheken nur in der App: three.js r128 (UMD von cdnjs) und `OrbitCon
 
 Die Netze werden **direkt aus Dreiecken** aufgebaut, ohne Boolesche Operationen. Grund: Die Sandbox der Artifacts blockiert den Abruf von WASM, deshalb funktioniert manifold-3d dort nicht. Ein Vertex-Dedupe (auf 1e-4 gerundet) sorgt für ein geschlossenes, mannigfaltiges Netz (manifold).
 
-- **Gridfinity-Profil der Grundplatte** (z / Einzug von der Zellkante): `0/2.85 → 0.7/2.15 → 2.5/2.15 → 4.65/0`. Plattenhöhe H = 4,65 mm, Eckradius oben R = 4 mm. Die Platte ist ein offener Rahmen ohne Boden.
+- **Gridfinity-Profil der Grundplatte** (z / Einzug von der Zellkante): `0/2.85 → 0.7/2.15 → 2.5/2.15 → 4.4/0.25`. Plattenhöhe H = 4,4 mm (Felix, 11. Nov. 2026: Stegspitze oben flach abgeschnitten, vorher 4,65/0. Grund: Bei 4,65 blieben in den obersten Schichten nur kleine Inseln an den Zellecken stehen, ein Absatz bei 4,4–4,6. Die kopfüber gedruckte PETG-Platte lag nur auf diesen Inseln und schwebte sonst. Jetzt haben alle Stege eine durchgehende, 0,5 mm breite Oberkante, also liegt der ganze Kamm aus PLA und PETG aufeinander. „Aus Stegspitze“ wächst entsprechend ab dieser Kante.), Eckradius oben R = 4 mm. Die Platte ist ein offener Rahmen ohne Boden.
   - Felix' vorhandene SimpleBase-STLs sind nur 4,25 mm hoch, sie folgen also nicht der Norm.
 - **Kacheln (Tiles):** Jedes Teil ist ein Raster aus Kacheln.
   - Eine Taschenkachel ist eine Zelle mit Fasenprofil.
@@ -111,8 +111,8 @@ Das hat Felix entschieden, in dieser Reihenfolge:
    - Stapelabstand = H + 2,85 / tan(Winkel) + Basisschicht, bei 45° also etwa 8,1 mm pro Ebene.
    - Kosten: mehr PETG, beim Beispielstapel mit 3 Platten etwa 35 g.
    - Die anderen Formen (Netz, Netz + Keil, Folie) sind weiterhin auswählbar.
-6. **Neu, Felix' Idee (8. Nov. 2026): „Wendeplatte“ (`sepStyle: 'flip'`):** Jede zweite Grundplatte im Stapel wird aus **PETG kopfüber** gedruckt. Kopfüber beginnt sie mit den Stegspitzen genau auf den Stegspitzen der PLA-Platte darunter und wird im 45°-Winkel breiter (gleiche Überhangform wie „Aus Stegspitze“). Oben endet sie mit dem flachen 5,7-mm-Gitter, auf dem die nächste PLA-Platte richtig herum flächig liegt. Kein PETG-Abfall, Platten liegen direkt aufeinander (Stapelhöhe = Anzahl × 4,65 mm). Nach dem Druck wird die PETG-Platte umgedreht und ist eine normale Grundplatte des Einsatzes. Umsetzung: `placeOn(p, top, flip)` (y-Zellfolge gespiegelt), `stackMeshes` (Platte 180° um x gedreht ins PETG-Netz). Auswählbar in Schritt 3 („Trennung: Aus Stegspitze | Wendeplatte“), Standard bleibt vorerst „Aus Stegspitze“. **Testdruck steht aus.**
-   - **Leisten bei Wendeplatte (Felix):** Leisten sind dann 4,65 mm hoch (wie eine Platte) und wechseln im Turm ebenfalls PLA/PETG, ohne Zwischenlage. PETG-Leisten sind echte Teile des Einsatzes. Die Materialwechsel liegen damit auf denselben Höhen wie im Plattenstapel (erledigt damit den offenen Punkt „Höhen abstimmen“ für diesen Modus).
+6. **Neu, Felix' Idee (8. Nov. 2026): „Wendeplatte“ (`sepStyle: 'flip'`):** Jede zweite Grundplatte im Stapel wird aus **PETG kopfüber** gedruckt. Kopfüber beginnt sie mit den Stegspitzen genau auf den Stegspitzen der PLA-Platte darunter und wird im 45°-Winkel breiter (gleiche Überhangform wie „Aus Stegspitze“). Oben endet sie mit dem flachen 5,7-mm-Gitter, auf dem die nächste PLA-Platte richtig herum flächig liegt. Kein PETG-Abfall, Platten liegen direkt aufeinander (Stapelhöhe = Anzahl × 4,4 mm). Nach dem Druck wird die PETG-Platte umgedreht und ist eine normale Grundplatte des Einsatzes. Umsetzung: `placeOn(p, top, flip)` (y-Zellfolge gespiegelt), `stackMeshes` (Platte 180° um x gedreht ins PETG-Netz). Auswählbar in Schritt 3 („Trennung: Aus Stegspitze | Wendeplatte“), Standard bleibt vorerst „Aus Stegspitze“. **Testdruck steht aus.**
+   - **Leisten bei Wendeplatte (Felix):** Leisten sind dann 4,4 mm hoch (wie eine Platte) und wechseln im Turm ebenfalls PLA/PETG, ohne Zwischenlage. PETG-Leisten sind echte Teile des Einsatzes. Die Materialwechsel liegen damit auf denselben Höhen wie im Plattenstapel (erledigt damit den offenen Punkt „Höhen abstimmen“ für diesen Modus).
 - **Leisten-Türme nicht ändern:** flache PETG-Platten mit genau der Leisten-Grundfläche. Laut Felix hat das gepasst.
 
 ## 5. Oberfläche (Wünsche von Felix)
@@ -135,7 +135,7 @@ Das hat Felix entschieden, in dieser Reihenfolge:
 - Schichthöhe 0,2 mm.
 - PETG: etwa 240 °C, Lüfter 30–50 %, 0,8 mm Rückzug, „Wipe while retracting“.
 - „Avoid crossing walls“ an, „Thick bridges“ an. Die Wartetemperatur der gerade nicht druckenden Düse senken, damit sie nicht nachtropft.
-- Die Leisten sind 2,4 mm hoch, die Platten 4,65 mm. Deshalb liegen die Materialwechsel in Leisten-Türmen und Plattenstapeln auf unterschiedlichen Höhen.
+- Die Leisten sind 2,4 mm hoch, die Platten 4,4 mm. Deshalb liegen die Materialwechsel in Leisten-Türmen und Plattenstapeln auf unterschiedlichen Höhen.
 
 ## 7. Offene Punkte
 

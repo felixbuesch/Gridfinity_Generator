@@ -71,7 +71,7 @@
     if (sel.kind === 'P') {
       const p = R.pieces[sel.idx]; if (!p) return null;
       const petg = !!(j && j.flip), v = GF.volume(P.mesh(plateKey(P, p)).pla);
-      return { tag: p.type.label, title: 'Platte', sub: cellsOf(p), rows: [['Maße', `${fmt(p.w)} × ${fmt(p.d)} × 4,65 mm`], ['Position', `${fmt(ox + p.x)} / ${fmt(oy + p.y)} mm ab links / vorne`], ['Gleiche Teile', `${p.type.pieces.length}×`], [petg ? 'PETG' : 'PLA', `${fmt(v * (petg ? 1.27 : PLA_DENSITY), 0)} g${petg ? ' · kopfüber gedruckt' : ''}`]], j };
+      return { tag: p.type.label, title: 'Platte', sub: cellsOf(p), rows: [['Maße', `${fmt(p.w)} × ${fmt(p.d)} × 4,4 mm`], ['Position', `${fmt(ox + p.x)} / ${fmt(oy + p.y)} mm ab links / vorne`], ['Gleiche Teile', `${p.type.pieces.length}×`], [petg ? 'PETG' : 'PLA', `${fmt(v * (petg ? 1.27 : PLA_DENSITY), 0)} g${petg ? ' · kopfüber gedruckt' : ''}`]], j };
     }
     const s = R.spacers.list[sel.idx]; if (!s) return null; const t = s.type;
     const petg = !!(j && j.flip), v = GF.volume(P.mesh(spacerKey(P, s)).spacer);
@@ -184,7 +184,7 @@
               <button type="button" aria-pressed={o.sepStyle === 'flip'} onclick={() => (o.sepStyle = 'flip')} data-tip={TIPS.flip}>Wendeplatte</button>
             </div>
           </div>
-          {#if o.sepStyle === 'flip'}<p class="hint">Jede zweite Platte wird aus <b class="pe">PETG kopfüber</b> gedruckt und trennt die PLA-Platten. Nach dem Druck umdrehen, dann ist sie eine normale Grundplatte. Die Leisten sind dann 4,65 mm hoch und wechseln im Turm genauso zwischen PLA und <b class="pe">PETG</b>. In der 3D-Ansicht orange.</p>{/if}
+          {#if o.sepStyle === 'flip'}<p class="hint">Jede zweite Platte wird aus <b class="pe">PETG kopfüber</b> gedruckt und trennt die PLA-Platten. Nach dem Druck umdrehen, dann ist sie eine normale Grundplatte. Die Leisten sind dann 4,4 mm hoch und wechseln im Turm genauso zwischen PLA und <b class="pe">PETG</b>. In der 3D-Ansicht orange.</p>{/if}
         {/if}
         {#if !R.error}
           <div class="jobs">
@@ -278,7 +278,7 @@
     <div class="grid2">
       {#each PROFI as [k, l, st, mn]}
         {@const locked = k === 'spacerH' && o.stack && o.sepStyle === 'flip'}
-        <label class="f" data-tip={locked ? 'Bei Wendeplatte sind die Leisten so hoch wie eine Platte (4,65 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}<input type="number" step={st} min={mn} bind:value={o[k] as number} disabled={locked}></label>
+        <label class="f" data-tip={locked ? 'Bei Wendeplatte sind die Leisten so hoch wie eine Platte (4,4 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}<input type="number" step={st} min={mn} bind:value={o[k] as number} disabled={locked}></label>
       {/each}
     </div>
     <p class="hint">Bambu Lab X2D im Zwei-Düsen-Druck: 235,5 × 256 × 256 mm.</p>

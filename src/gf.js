@@ -1,8 +1,11 @@
 // Gridfinity geometry + layout core. No dependencies; runs in Node and in the browser (ES module).
 const GF = (() => {
-  const PITCH = 42, R = 4, H = 4.65;
+  const PITCH = 42, R = 4, H = 4.4;
   // baseplate pocket profile, bottom -> top: [z, inset]
-  const PROFILE = [[0, 2.85], [0.7, 2.15], [2.5, 2.15], [4.65, 0]];
+  // Oben flach abgeschnitten (statt Stegspitze bei 4,65): Stege haben überall 0,5 mm breite Oberkante,
+  // keine höheren Eck-Inseln -> PLA und kopfüber gedrucktes PETG liegen auf dem ganzen Kamm aufeinander.
+  const TOP = 0.25;
+  const PROFILE = [[0, 2.85], [0.7, 2.15], [2.5, 2.15], [H, TOP]];
   const T_BOT = 2.85, CHAMFER_Z = 2.5, CHAMFER_T = 2.15;
   const ARC = 8; // segments per rounded corner
 
@@ -126,7 +129,8 @@ const GF = (() => {
   }
   // knife flags per side for a level: pocket tiles -> all sides; solid -> sides whose neighbour is pocket
   function knifeFlags(tile, isKnifeLevel) {
-    if (!isKnifeLevel) return [false, false, false, false];
+    // mit flacher Stegoberkante (TOP > 0) enden die Taschenringe nie auf der Zellkante -> keine Zusatzpunkte
+    if (!isKnifeLevel || TOP > 1e-9) return [false, false, false, false];
     if (tile.pocket) return [true, true, true, true];
     return tile.nbPocket.slice();
   }
@@ -159,8 +163,8 @@ const GF = (() => {
         if (wedge) {
           // grows out of the 45deg chamfer of the plate below: starts as a line on the chamfer,
           // inner face rises at 45deg to the rib edge (inset T_BOT) of the next plate -> no overhang
-          const ts = T_BOT / 2, zc = Z0 - ts;
-          const rs = ring(t, ts, zc), rIn = ring(t, T_BOT, Z0), inHi = ring(t, T_BOT, Z1), r0 = ring(t, 0, Z0);
+          const ts = T_BOT / 2, zc = Z0 - (ts - TOP);
+          const rs = ring(t, ts, zc), rIn = ring(t, T_BOT, Z0), inHi = ring(t, T_BOT, Z1), r0 = ring(t, TOP, Z0);
           loft(m, rs, r0, true);     // lies on the PLA chamfer
           loft(m, rs, rIn, false);   // 45deg inner flank
           loft(m, rIn, inHi, false); // vertical inner edge of the sheet
@@ -182,7 +186,7 @@ const GF = (() => {
 
   // PETG that starts on the top edges of the plate below and grows outward at the allowed overhang angle
   // until it reaches the full foot of the next plate (inset T_BOT), then a flat base of thickness s
-  const growHeight = (o) => T_BOT / Math.tan(Math.max(20, Math.min(70, o.overhang || 45)) * Math.PI / 180);
+  const growHeight = (o) => (T_BOT - TOP) / Math.tan(Math.max(20, Math.min(70, o.overhang || 45)) * Math.PI / 180);
   // Wendeplatte: jede zweite Platte ist selbst die PETG-Trennung (kopfüber), Platten liegen direkt aufeinander
   // Wendeplatte: Leisten so hoch wie eine Platte und im Turm ebenfalls abwechselnd PLA/PETG ohne Zwischenlage
   const flipMode = (o) => o.sepStyle === 'flip' && o.stack;
@@ -194,8 +198,8 @@ const GF = (() => {
     for (const t of tiles) {
       const kb = knifeFlags(t, true), kt = knifeFlags(t, false);
       if (t.pocket) {
-        const r0 = ring(t, 0, Z0), ra = ring(t, T_BOT, Za), r1 = ring(t, T_BOT, Z1);
-        loft(m, r0, ra, false);   // overhang flank, grows outward from the knife edge
+        const r0 = ring(t, TOP, Z0), ra = ring(t, T_BOT, Za), r1 = ring(t, T_BOT, Z1);
+        loft(m, r0, ra, false);   // overhang flank, grows outward from the flat rib top
         loft(m, ra, r1, false);   // vertical edge of the base layer
         rectAnnulus(m, t, r0, Z0, false);
         rectAnnulus(m, t, r1, Z1, true);
