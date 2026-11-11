@@ -168,3 +168,19 @@ describe('flache Stegoberkante (kein Absatz oben)', () => {
     expect(top).toBeGreaterThan(n * perim * 0.25 * 0.95);
   });
 });
+
+describe('Außenrand oben', () => {
+  it('Außenkante ist oben 0,5 mm breit wie ein innerer Steg', () => {
+    const R = GF.compute({ ...BASE, boxW: 85, boxD: 85, stack: false });
+    const m = GF.plateMesh(R.types[0]), v = m.v;
+    // kleinster Abstand eines Taschen-Oberkantenpunkts (z = H, innerhalb) zum Außenrand
+    const P = R.types[0].rep;
+    let dmin = Infinity;
+    for (let i = 0; i < v.length; i += 3) {
+      if (Math.abs(v[i + 2] - GF.H) > 1e-6) continue;
+      const x = v[i], y = v[i + 1], d = Math.min(x, y, P.w - x, P.d - y);
+      if (d > 1e-6) dmin = Math.min(dmin, d);
+    }
+    expect(dmin).toBeCloseTo(0.5, 6);
+  });
+});

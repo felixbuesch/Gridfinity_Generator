@@ -32,9 +32,10 @@ const GF = (() => {
   const z3 = (p, z) => [p[0], p[1], z];
 
   // rounded-rect ring of a pocket tile at inset t: array of 4 corner arcs (SW,SE,NE,NW), ccw
-  function ring(tile, t, z) {
-    const { x0, y0, x1, y1 } = tile, r = R - t;
-    const cs = [[x0 + t + r, y0 + t + r, 180], [x1 - t - r, y0 + t + r, 270], [x1 - t - r, y1 - t - r, 0], [x0 + t + r, y1 - t - r, 90]];
+  // ex: optional extra inset per side [S,E,N,W]
+  function ring(tile, t, z, ex) {
+    const { x0, y0, x1, y1 } = tile, r = R - t, [eS, eE, eN, eW] = ex || [0, 0, 0, 0];
+    const cs = [[x0 + t + eW + r, y0 + t + eS + r, 180], [x1 - t - eE - r, y0 + t + eS + r, 270], [x1 - t - eE - r, y1 - t - eN - r, 0], [x0 + t + eW + r, y1 - t - eN - r, 90]];
     return cs.map(([cx, cy, a0]) => {
       const arc = [];
       for (let i = 0; i <= ARC; i++) {
@@ -44,6 +45,9 @@ const GF = (() => {
       return arc;
     });
   }
+  // Außenkante der Platte: oben genauso breit wie ein Steg zwischen zwei Zellen (2 × TOP = 0,5 mm),
+  // sonst wäre der Rand nur 0,25 mm breit und der Slicer lässt ihn weg (Lücke zwischen PLA und PETG am Rand)
+  const topEx = (tile) => (tile.boundary || [false, false, false, false]).map((b) => (b ? TOP : 0));
   const flat = (rg) => [].concat(...rg);
   const corners = (tile) => [[tile.x0, tile.y0], [tile.x1, tile.y0], [tile.x1, tile.y1], [tile.x0, tile.y1]];
 
@@ -141,7 +145,7 @@ const GF = (() => {
     for (const t of tiles) {
       const kb = knifeFlags(t, false), kt = knifeFlags(t, true);
       if (t.pocket) {
-        const rings = PROFILE.map(([z, ins]) => ring(t, ins, z0 + z));
+        const rings = PROFILE.map(([z, ins], k) => ring(t, ins, z0 + z, k === PROFILE.length - 1 ? topEx(t) : null));
         for (let i = 0; i < rings.length - 1; i++) loft(m, rings[i], rings[i + 1], false);
         rectAnnulus(m, t, rings[0], z0, false);
         rectAnnulus(m, t, rings[rings.length - 1], z0 + H, true);
@@ -164,7 +168,7 @@ const GF = (() => {
           // grows out of the 45deg chamfer of the plate below: starts as a line on the chamfer,
           // inner face rises at 45deg to the rib edge (inset T_BOT) of the next plate -> no overhang
           const ts = T_BOT / 2, zc = Z0 - (ts - TOP);
-          const rs = ring(t, ts, zc), rIn = ring(t, T_BOT, Z0), inHi = ring(t, T_BOT, Z1), r0 = ring(t, TOP, Z0);
+          const rs = ring(t, ts, zc, topEx(t).map((e) => e * (1 - (ts - TOP) / (H - CHAMFER_Z)))), rIn = ring(t, T_BOT, Z0), inHi = ring(t, T_BOT, Z1), r0 = ring(t, TOP, Z0, topEx(t));
           loft(m, rs, r0, true);     // lies on the PLA chamfer
           loft(m, rs, rIn, false);   // 45deg inner flank
           loft(m, rIn, inHi, false); // vertical inner edge of the sheet
@@ -198,7 +202,7 @@ const GF = (() => {
     for (const t of tiles) {
       const kb = knifeFlags(t, true), kt = knifeFlags(t, false);
       if (t.pocket) {
-        const r0 = ring(t, TOP, Z0), ra = ring(t, T_BOT, Za), r1 = ring(t, T_BOT, Z1);
+        const r0 = ring(t, TOP, Z0, topEx(t)), ra = ring(t, T_BOT, Za), r1 = ring(t, T_BOT, Z1);
         loft(m, r0, ra, false);   // overhang flank, grows outward from the flat rib top
         loft(m, ra, r1, false);   // vertical edge of the base layer
         rectAnnulus(m, t, r0, Z0, false);
