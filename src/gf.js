@@ -1,6 +1,6 @@
 // Gridfinity geometry + layout core. No dependencies; runs in Node and in the browser (ES module).
 const GF = (() => {
-  const PITCH = 42, R = 4, H = 4.4;
+  const PITCH = 42, R = 4, H = 4.4, MAX_DIM = 2000;
   // baseplate pocket profile, bottom -> top: [z, inset]
   // Oben flach abgeschnitten (statt Stegspitze bei 4,65): Stege haben überall 0,5 mm breite Oberkante,
   // keine höheren Eck-Inseln -> PLA und kopfüber gedrucktes PETG liegen auf dem ganzen Kamm aufeinander.
@@ -315,14 +315,25 @@ const GF = (() => {
 
   // ---------- stapelgerechte Aufteilung ----------
   // alle Zerlegungen von n Zellen in Gruppen (Größen absteigend), jede <= maxPart, höchstens maxParts Gruppen
+  // Alle Zerlegungen von n Zellen in höchstens maxParts Teile <= maxPart (große Teile zuerst).
+  // Bei sehr vielen Zellen explodiert das: dann nur ausgewogene Zerlegungen (Teile nahe n/k) je Teilezahl k.
   function partitions(n, maxPart, maxParts) {
-    const out = [];
-    const rec = (left, max, acc) => {
-      if (left === 0) { out.push(acc.slice()); return; }
-      if (acc.length >= maxParts) return;
-      for (let k = Math.min(max, left); k >= 1; k--) { acc.push(k); rec(left - k, k, acc); acc.pop(); }
+    const run = (lo, k, cap) => {
+      const out = [];
+      const rec = (left, max, acc) => {
+        if (out.length >= cap) return;
+        if (left === 0) { if (!k || acc.length === k) out.push(acc.slice()); return; }
+        if (acc.length >= (k || maxParts)) return;
+        if (k && left > (k - acc.length) * max) return;
+        for (let s = Math.min(max, left); s >= lo; s--) { acc.push(s); rec(left - s, s, acc); acc.pop(); }
+      };
+      rec(n, maxPart, []);
+      return out;
     };
-    rec(n, maxPart, []);
+    const all = run(1, 0, 3000);
+    if (all.length < 3000) return all;
+    const out = [];
+    for (let k = Math.ceil(n / maxPart); k <= maxParts; k++) out.push(...run(Math.max(1, Math.floor(n / k) - 2), k, 150));
     return out;
   }
   // Achse ohne Rand in aufeinanderfolgende Gruppen der angegebenen Größen schneiden
@@ -357,14 +368,17 @@ const GF = (() => {
   function compute(o) {
     const AX = axisLayout(o.boxW, o.clearance, o.minSpacer, o.half, o.alignX || o.align);
     const AY = axisLayout(o.boxD, o.clearance, o.minSpacer, o.half, o.alignY || o.align);
-    if (!AX.cells.length || !AY.cells.length) return { error: 'Die Box ist zu klein für eine Gridfinity-Einheit (mind. 42 mm plus Spiel je Richtung).' };
+    if (!(o.boxW > 0 && o.boxD > 0)) return { error: 'Bitte Breite und Tiefe eingeben.' };
+    if (o.boxW > MAX_DIM || o.boxD > MAX_DIM) return { error: `Höchstens ${MAX_DIM} mm je Richtung. Für größere Flächen bitte in mehrere Bereiche aufteilen.` };
+    if (!AX.cells.length || !AY.cells.length) return { error: 'Das Innenmaß ist zu klein für eine Gridfinity-Zelle (mindestens 42 mm plus Spiel je Richtung).' };
+    if (o.bedZ < H) return { error: `Die Druckhöhe Z ist kleiner als eine Platte (${H} mm). Druckbettmaße prüfen.` };
     const sep = o.spacers === 'separate';
     const gX = sep ? { ...AX, mLow: 0, mHigh: 0 } : AX, gY = sep ? { ...AY, mLow: 0, mHigh: 0 } : AY;
     const ox = sep ? AX.mLow : 0, oy = sep ? AY.mLow : 0;
     // Passt alles nebeneinander auf ein Druckbett, wird nicht gestapelt: ein Material, kein Prime-Tower
     if (sep) {
-      const flat = flatSplit(gX, gY, o.bedX, o.bedY, nCopies(o));
-      if (flat) {
+      // mehrere Aufteilungen probieren: die erste, bei der auch die Leisten noch mit aufs Bett passen
+      for (const flat of flatSplit(gX, gY, o.bedX, o.bedY, nCopies(o), 8)) {
         const r = finish(AX, AY, flat, ox, oy, sep, { ...o, stack: false }, o.bedX, o.bedY, flat.place);
         if (r.stacks.length === 1) return { ...r, flat: true };
       }
@@ -395,7 +409,7 @@ const GF = (() => {
     }
     for (const t of types.values()) t.tiles = pieceTiles(t.rep, o.cornerR);
     const stacks = flatPlace
-      ? [{ label: 'J1', flat: true, bed: { w: flatPlace.W, d: flatPlace.D }, foot: { w: flatPlace.fw, d: flatPlace.fd },
+      ? [{ label: 'J1', flat: true, bedRot: Math.abs(flatPlace.W - o.bedX) > 1e-6, bed: { w: flatPlace.W, d: flatPlace.D }, foot: { w: flatPlace.fw, d: flatPlace.fd },
           items: flatPlace.items.map((q) => ({ p: pieces[q.i], rot: q.rot, flip: 0, lv: 0, dx: q.x, dy: q.y })) }]
       : o.stack ? buildStacks(pieces, o) : pieces.map((p, i) => ({ items: [{ p, dx: 0, dy: 0 }], label: 'J' + (i + 1) }));
     const totalW0 = AX.cells.reduce((a, b) => a + b, 0) + AX.mLow + AX.mHigh, totalD0 = AY.cells.reduce((a, b) => a + b, 0) + AY.mLow + AY.mHigh;
@@ -445,8 +459,8 @@ const GF = (() => {
     return { items: out.sort((a, b) => a.i - b.i), fw, fd: yTop - g };
   }
   // Wenigste Platten, die zusammen flach auf ein Bett passen (ohne Stapeln)
-  function flatSplit(gX, gY, BX, BY, nc = 1) {
-    const L = Math.max(BX, BY), combos = [];
+  function flatSplit(gX, gY, BX, BY, nc = 1, max = 1) {
+    const L = Math.max(BX, BY), combos = [], found = [];
     for (const sx of axisCands(gX, L)) for (const sy of axisCands(gY, L)) combos.push({ sx, sy, n: sx.length * sy.length });
     combos.sort((a, b) => a.n - b.n);
     for (const c of combos) {
@@ -456,10 +470,10 @@ const GF = (() => {
       if (area > BX * BY) continue;
       for (const [W, D] of [[BX, BY], [BY, BX]]) {
         const pk = shelfPack(rects, W, D, 3);
-        if (pk) return { sx: c.sx, sy: c.sy, cnt: c.n, place: { ...pk, W, D } };
+        if (pk) { found.push({ sx: c.sx, sy: c.sy, cnt: c.n, place: { ...pk, W, D } }); if (found.length >= max) return max === 1 ? found[0] : found; }
       }
     }
-    return null;
+    return max === 1 ? found[0] || null : found;
   }
 
   // Aufteilung so wählen, dass die Platten aufeinander passen: erst möglichst wenige Stapel (Druckjobs),
@@ -627,7 +641,8 @@ const GF = (() => {
       if (st.flat) { w = st.foot.w; d = st.foot.d; bx = st.bed.w; by = st.bed.d; }
       else {
         const p = st.items[0].p; w = p.w; d = p.d;
-        [bx, by] = (w <= BX + 1e-6 && d <= BY + 1e-6) ? [BX, BY] : [BY, BX];
+        st.bedRot = !(w <= BX + 1e-6 && d <= BY + 1e-6);
+        [bx, by] = st.bedRot ? [BY, BX] : [BX, BY];
         st.bed = { w: bx, d: by };
       }
       st.regions = [{ x: w + g, y: 0, W: bx - w - g, H: by, lanes: [] }, { x: 0, y: d + g, W: w, H: by - d - g, lanes: [] }].filter(r => r.W > 0.5 && r.H > 0.5);
@@ -656,7 +671,7 @@ const GF = (() => {
     };
     // towers: equal strips stacked on top of each other (PETG layer between) when stack printing is on
     const towers = [], perT = spacerHeight(o) + spacerGap(o);
-    const maxT = o.stack ? Math.max(1, Math.min(o.maxStack, Math.floor(((o.bedZ || 250) - spacerHeight(o)) / perT) + 1)) : 1;
+    const maxT = o.stack ? Math.max(1, Math.min(o.maxStack, Math.floor((o.bedZ - spacerHeight(o)) / perT) + 1)) : 1;
     const groups = new Map();
     for (const sp of spacers.list) {
       const L = Math.max(sp.x1 - sp.x0, sp.y1 - sp.y0), T = Math.min(sp.x1 - sp.x0, sp.y1 - sp.y0);
@@ -765,6 +780,47 @@ const GF = (() => {
   //   Metadata/model_settings.config  per-part extruder, plate assignment
   // Vertices are stored relative to the object's footprint centre; the build item transform puts the
   // object back where the layout placed it on the bed (opts.bed = [w, d] centres it instead).
+  // Material und Höhe eines Druckjobs ohne das ganze Netz zu bauen (schnell, für die Anzeige).
+  // Rechnet dieselben Teile wie stackMeshes, aber über zwischengespeicherte Volumen je Teiletyp.
+  // Für den Export: liegt ein Druckjob intern quer (Bett gedreht), wird das Netz um 90° gedreht,
+  // damit die Datei in X höchstens Bett-X und in Y höchstens Bett-Y breit ist
+  function toBed(m, stack) {
+    if (!stack.bedRot || !m.f.length) return m;
+    const W = stack.bed.w, out = new Mesh(), V = m.v, F = m.f;
+    const P = (i) => [V[3 * i + 1], W - V[3 * i], V[3 * i + 2]];
+    for (let q = 0; q < F.length; q += 3) out.tri(P(F[q]), P(F[q + 1]), P(F[q + 2]));
+    return out;
+  }
+  function stackInfo(stack, o) {
+    const vol = (obj, key, mk) => { obj._vol = obj._vol || {}; if (!(key in obj._vol)) obj._vol[key] = volume(mk()); return obj._vol[key]; };
+    const gap = sepGap(o), per = H + gap, flip = flipMode(o);
+    let pla = 0, petg = 0;
+    stack.items.forEach((it, k) => {
+      const t = it.p.type, lvk = it.lv ?? k, pv = vol(t, 'plate', () => plateMesh(t));
+      if (it.flip) { petg += pv; return; }
+      pla += pv;
+      if (lvk > 0 && o.sepStyle !== 'flip') {
+        petg += vol(t, 'sep:' + o.sepStyle + ':' + o.sepT + ':' + o.overhang, () => {
+          const m = new Mesh();
+          if (o.sepStyle === 'sheet') addPlate(m, t.tiles.map(q => ({ ...q, pocket: false, nbPocket: [false, false, false, false] })), 0, o.sepT);
+          else if (o.sepStyle === 'grow') addGrowSeparator(m, t.tiles, H, growHeight(o), o.sepT);
+          else addSeparator(m, t.tiles, 0, o.sepT, o.sepStyle === 'wedge' ? 1 : 0);
+          return m;
+        });
+      }
+    });
+    const sh = spacerHeight(o), perS = sh + spacerGap(o);
+    let hs = 0;
+    for (const e of (stack.spacers || [])) {
+      const t = e.sp.type, lv = e.level || 0, sv = vol(t, 'sp:' + t.h, () => spacerMesh(t));
+      if (flip && lv % 2) petg += sv; else pla += sv;
+      if (lv > 0 && !flip) petg += vol(t, 'spsep:' + o.sepT, () => { const m = new Mesh(); addPlate(m, t.tiles, 0, o.sepT); return m; });
+      hs = Math.max(hs, lv * perS + sh);
+    }
+    const nl = stack.items.reduce((a, it, k) => Math.max(a, (it.lv ?? k) + 1), 0);
+    return { pla, petg, height: Math.max(nl ? nl * H + (nl - 1) * gap : 0, hs) };
+  }
+
   function threeMF(parts, objName, opts) {
     opts = opts || {};
     const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -876,7 +932,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, nCopies, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;

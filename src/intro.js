@@ -312,8 +312,10 @@ export function createIntro({ onDone }) {
   // gespeicherte Maße je Einsatzort
   const STORE = 'gf-intro-v1';
   let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch (e) { saved = {}; }
-  const dims = (u) => ({ W: saved[u.id]?.W ?? u.W, D: saved[u.id]?.D ?? u.D });
+  const readSaved = () => { try { const v = JSON.parse(localStorage.getItem(STORE) || '{}'); saved = v && typeof v === 'object' ? v : {}; } catch (e) { saved = {}; } };
+  readSaved();
+  const ok = (x) => typeof x === 'number' && Number.isFinite(x) && x >= 1 && x <= 3000;
+  const dims = (u) => ({ W: ok(saved[u.id]?.W) ? saved[u.id].W : u.W, D: ok(saved[u.id]?.D) ? saved[u.id].D : u.D });
 
   let state = 'select', sel = null, hovered = null, running = false, W0 = 1, H0 = 1;
   // ---- Modelle anlegen ----
@@ -497,9 +499,10 @@ export function createIntro({ onDone }) {
       s.pull = lerp(s.pull, s.pullT, f(3));
       if (s.model.drawer) s.model.drawer.position.z = s.model.closedZ + s.pull * s.model.travel;
       s.scaler.scale.setScalar(lerp(s.scaler.scale.x, s.scaleT * (portrait() && state === 'select' ? 0.85 : 1) * (1 + s.hover * 0.06), f(8)));
-      const bob = state === 'select' ? Math.sin(t * 1.1 + s.i * 2) * 0.06 + s.hover * 0.28 : 0;
+      const bob = state === 'select' ? (REDUCED ? 0 : Math.sin(t * 1.1 + s.i * 2) * 0.06) + s.hover * 0.28 : 0;
       s.spin.position.y = s.lift + enter + bob;
-      const yaw = state === 'select' ? -0.5 + Math.sin(t * 0.35 + s.i * 1.7) * 0.22 + s.hover * 0.25 : -0.42 + Math.sin(t * 0.25) * 0.05 + s.drag;
+      const wob = REDUCED ? 0 : 1;
+      const yaw = state === 'select' ? -0.5 + wob * Math.sin(t * 0.35 + s.i * 1.7) * 0.22 + s.hover * 0.25 : -0.42 + wob * Math.sin(t * 0.25) * 0.05 + s.drag;
       s.yaw = lerp(s.yaw, yaw, f(state === 'detail' && down ? 30 : 3));
       s.spin.rotation.y = s.yaw;
       s.ring.scale.setScalar(1 + s.hover * 0.08 + Math.sin(t * 2 + s.i) * 0.01);
@@ -516,8 +519,12 @@ export function createIntro({ onDone }) {
     composer.render();
   }
 
+  let shown = false;
   function show() {
     root.hidden = false; state = 'select'; sel = null; hovered = null;
+    // im Planer geänderte Maße übernehmen (der Planer speichert sie je Einsatzort)
+    readSaved();
+    for (const s of slots) { const d = dims(s.use); if (d.W !== s.W || d.D !== s.D) { s.W = d.W; s.D = d.D; rebuild(s, false); } }
     root.classList.remove('detail', 'leaving');
     for (const s of slots) { s.alphaT = 1; s.liftT = 0; s.pullT = 0.45; s.alpha = 0; s.root.position.copy(slotHome(s.i)); }
     for (const s of slots) { s.label.style.animation = 'none'; void s.label.offsetWidth; s.label.style.animation = ''; }
@@ -526,6 +533,9 @@ export function createIntro({ onDone }) {
     moveCam('select', 2200);
     tStart = last = performance.now();
     if (!running) { running = true; requestAnimationFrame(frame); }
+    // Tastatur: Fokus auf die erste Auswahl, damit es nach „Zurück“ nicht auf der Seite verloren geht
+    if (shown && (document.activeElement === document.body || !document.activeElement)) slots[0].label.focus({ preventScroll: true });
+    shown = true;
   }
 
   resize();

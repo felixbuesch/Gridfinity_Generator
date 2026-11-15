@@ -121,12 +121,13 @@ export default class Stage {
     this.w = w; this.h = h;
     if (this.P && !this.anims.length) this.goStep(this.step, true);
   }
-  setPanel(px) { this.panel = px; this.applyOffset(); this.camera.updateProjectionMatrix(); if (this.P) this.goStep(this.step, true); }
+  setPanel(px, top = 0) { this.panel = px; this.top = top; this.applyOffset(); this.camera.updateProjectionMatrix(); if (this.P) this.goStep(this.step, true); }
   applyOffset() {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    if (this.panel > 0 && w && h) this.camera.setViewOffset(w, h, this.panel / 2, 0, w, h); else this.camera.clearViewOffset();
+    const top = this.top || 0;
+    if ((this.panel > 0 || top > 0) && w && h) this.camera.setViewOffset(w, h, this.panel / 2, -top / 2, w, h); else this.camera.clearViewOffset();
   }
-  visibleAspect() { const w = this.canvas.clientWidth || 1, h = this.canvas.clientHeight || 1; return Math.max(0.5, (w - this.panel) / h); }
+  visibleAspect() { const w = this.canvas.clientWidth || 1, h = this.canvas.clientHeight || 1; return Math.max(0.5, (w - this.panel) / Math.max(1, h - (this.top || 0))); }
 
   // ---------- Inhalt ----------
   setPlan(P, use) {
@@ -139,7 +140,8 @@ export default class Stage {
     this.placeLamp(this.lamp, W / 2, D / 2, Rm, 6);
     this.fill.position.set(W / 2 - Rm, -Rm * 2, Rm);
     this.buildHousing(W, D, use ? use.id : 'box');
-    if (R.error) { this.buildBeds(); this.goStep(this.step, true); return; }
+    this.bedsDirty = true; // Druckbetten erst bauen, wenn Schritt 3 sie zeigt (spart Zeit bei großen Plänen)
+    if (R.error) { disposeTree(this.beds); this.beds.clear(); this.bedBox = null; this.goStep(this.step, true); return; }
     const ox = R.AX.gapLow, oy = R.AY.gapLow, geos = new Map();
     // Wendeplatten (PETG) in der Schublade in PETG-Farbe zeigen
     const flipped = new Set(); R.stacks.forEach((s) => s.items.forEach((it) => { if (it.flip) flipped.add(it.p); }));
@@ -163,7 +165,6 @@ export default class Stage {
     });
     dims(this.root, 0, 0, W, D, Rm * 0.07 + 8, `${fmt(W)} mm`, `${fmt(D)} mm`, '#a0968b', 0.5);
     this.paint();
-    this.buildBeds();
     this.goStep(this.step, !this.started); this.started = true;
   }
 
@@ -197,17 +198,18 @@ export default class Stage {
         add(Math.min(180, W * 0.4), 12, 10, W / 2, -t - 24, h / 2, std(0xb8aa98, { roughness: 0.25, metalness: 0.95 }));
       }
     }
-    this.root.add(g);
+    this.root.add(g); this.housing = g;
   }
 
   // Druckbetten neben der Box: jeder Druckjob baut sich mit einer wandernden Schnittebene auf
   buildBeds() {
     disposeTree(this.beds); this.beds.clear(); this.printers = [];
     const P = this.P; if (!P || P.R.error) return;
-    const { R, o } = P, gap = 60, cols = Math.min(R.stacks.length, 3);
+    const { R, o } = P, gap = 60, cols = Math.min(R.stacks.length, 3), MAXB = 12;
     const bw = Math.max(o.bedX, o.bedY) + gap;
     const x0 = o.boxW + Math.max(220, this.Rm * 0.45), y0 = o.boxD / 2 - o.bedY / 2;
     R.stacks.forEach((s, i) => {
+      if (i >= MAXB) return; // sehr viele Druckjobs: nur die ersten zeigen, alle sind im Download
       const m = P.mesh('S:' + i), g = new THREE.Group();
       const cx = x0 + (i % cols) * bw, cy = y0 - Math.floor(i / cols) * (o.bedY + gap);
       g.position.set(cx, cy, 0);
@@ -257,7 +259,10 @@ export default class Stage {
 
   // ---------- Schritte und Kamera ----------
   goStep(n, instant) {
+    if (n === 3 && this.bedsDirty) { this.bedsDirty = false; this.buildBeds(); }
     this.step = n; this.beds.visible = n === 3; // Druckbetten nur im Schritt Drucken
+    // Schreibtisch: die große Tischplatte würde im Druckschritt ins Bild ragen
+    if (this.housing) this.housing.visible = !(n === 3 && this.use && this.use.id === 'desk');
     const target = n === 3 && this.bedBox && !this.bedBox.isEmpty() ? this.bedBox : new THREE.Box3().setFromObject(this.root);
     if (target.isEmpty()) return;
     const dir = n === 2 ? [0, -0.18, 1] : n === 3 ? [-0.35, -1.1, 1.0] : [-0.32, -1.15, 0.95];
@@ -375,6 +380,7 @@ export function partGroup(P, key, withDims) {
 export function bedsGroup(P) {
   const { R, o } = P, g = new THREE.Group(), gap = 30, cols = Math.min(R.stacks.length, 3), step = Math.max(o.bedX, o.bedY) + gap;
   R.stacks.forEach((s, i) => {
+    if (i >= 6) return; // Übersicht: höchstens 6 Druckbetten
     const pg = partGroup(P, 'S:' + i, false), cx = (i % cols) * step, cy = -Math.floor(i / cols) * step;
     pg.position.set(cx, cy, 0); g.add(pg);
     const e = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(s.bed.w, s.bed.d)), new THREE.LineBasicMaterial({ color: COL.amber, transparent: true, opacity: 0.5 }));

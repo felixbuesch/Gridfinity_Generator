@@ -19,19 +19,34 @@ export function loadOpts(): Opts {
 }
 export function saveOpts(o: Opts) { try { localStorage.setItem(STORE, JSON.stringify(o)); } catch { /* egal */ } }
 
-const num = (v: unknown, d: number) => { const x = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.')); return Number.isFinite(x) ? x : d; };
-// Werte so aufbereiten, wie der Rechenkern sie erwartet
+const num = (v: unknown, d: number) => { const x = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(',', '.')); return Number.isFinite(x) ? x : d; };
+const lim = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
+export const MAX_DIM = 2000; // mm je Richtung; größer wird mit Hinweis abgelehnt
+// Werte so aufbereiten, wie der Rechenkern sie erwartet: ungültige Eingaben -> Grundwert, alles in sinnvollen Grenzen
 export function clean(o: Opts) {
   const d = defaults(), r: Record<string, unknown> = { ...o };
-  for (const k of Object.keys(d) as (keyof Opts)[]) if (typeof d[k] === 'number') r[k] = num(o[k], 0);
+  for (const k of Object.keys(d) as (keyof Opts)[]) if (typeof d[k] === 'number') r[k] = num(o[k], d[k] as number);
   const c = r as unknown as Opts & { wedgeDepth: number };
-  c.maxStack = Math.max(1, Math.round(c.maxStack));
-  c.copies = Math.max(1, Math.min(20, Math.round(c.copies || 1)));
-  c.sepT = Math.max(0.1, c.sepT);
-  c.spacerH = Math.max(0.6, c.spacerH || 4.4);
-  c.rail = Math.max(0.8, c.rail); c.ribPitch = Math.max(8, c.ribPitch);
+  c.boxW = lim(c.boxW, 0, 100000); c.boxD = lim(c.boxD, 0, 100000);
+  c.clearance = lim(c.clearance, 0, 20); c.cornerR = lim(c.cornerR, 0, 50); c.minSpacer = lim(c.minSpacer, 0, 42);
+  c.bedX = lim(c.bedX, 50, 1000); c.bedY = lim(c.bedY, 50, 1000); c.bedZ = lim(c.bedZ, 10, 1000);
+  c.towerReserve = lim(c.towerReserve, 0, c.bedX - 50);
+  c.maxStack = lim(Math.round(c.maxStack), 1, 100);
+  c.copies = lim(Math.round(c.copies), 1, 20);
+  c.sepT = lim(c.sepT, 0.1, 5); c.overhang = lim(c.overhang, 20, 70);
+  c.spacerH = lim(c.spacerH, 0.6, 4.4); // höher als die Platte stört die Boxen
+  c.rail = lim(c.rail, 0.8, 20); c.ribPitch = lim(c.ribPitch, 8, 500);
   c.wedgeDepth = c.sepStyle === 'wedge' ? 1 : 0;
   return c;
+}
+
+// Maße je Einsatzort merken, damit der Startbildschirm sie beim nächsten Mal wieder anbietet
+export function saveDims(useId: string, W: number, D: number) {
+  if (!(Number.isFinite(W) && Number.isFinite(D) && W > 0 && D > 0)) return;
+  try {
+    const k = 'gf-intro-v1', v = JSON.parse(localStorage.getItem(k) || '{}') || {};
+    v[useId] = { W, D }; localStorage.setItem(k, JSON.stringify(v));
+  } catch { /* egal */ }
 }
 
 export const POSNAME = { x: { start: 'links', center: 'mittig', end: 'rechts' }, y: { start: 'vorne', center: 'mittig', end: 'hinten' } } as const;
@@ -48,10 +63,10 @@ export const TIPS: Record<string, string> = {
   minSpacer: 'Ist der Rest schmaler als dieser Wert, wird keine Leiste gedruckt und es bleibt ein Spalt.',
   half: 'Passt am Rand noch eine halbe Zelle (21 mm), wird eine halbe Reihe statt einer breiten Leiste eingesetzt.',
   spacerStyle: 'Leiter: zwei dünne Schienen mit Querstreben, sehr wenig Material. Voll: massiver Streifen.',
-  spacerH: 'Höhe der Leisten. Sie müssen nicht so hoch wie die Platten sein (4,4 mm), weil sie nur seitlich anliegen.',
+  spacerH: 'Höhe der Leisten, 0,6 bis 4,4 mm. Sie müssen nicht so hoch wie die Platten sein (4,4 mm), weil sie nur seitlich anliegen.',
   rail: 'Breite der beiden Längsschienen einer Leiter-Leiste. 1,2 mm sind drei Bahnen mit 0,4-mm-Düse.',
   ribPitch: 'Abstand der Querstreben. Größer spart Material, kleiner macht die Leiste steifer.',
-  bedX: 'Nutzbare Breite des Druckbetts. X2D mit beiden Düsen: 235,5 mm.',
+  bedX: 'Nutzbare Breite des Druckbetts. X2D mit beiden Düsen: 235 mm.',
   bedY: 'Nutzbare Tiefe des Druckbetts. X2D: 256 mm.',
   bedZ: 'Maximale Druckhöhe. Begrenzt, wie viele Platten in einen Stapel passen.',
   stack: 'Alle Platten eines Einsatzes in einem Druck übereinander, getrennt durch PETG. Ein Einsatz = ein Druckjob.',
@@ -63,6 +78,7 @@ export const TIPS: Record<string, string> = {
   towerReserve: 'Platz, der auf dem Bett für den Prime-Tower frei bleibt. Er wird beim Wechsel PLA/PETG gebraucht.',
   toIntro: 'Zurück zur Auswahl Schreibtisch, Schublade oder Box.',
   fit: 'Bei diesen Innenmaßen geht das Raster genau auf und es braucht keine Leisten: ↓ das nächstkleinere Maß, ↑ das nächstgrößere (eine Reihe mehr). Klick übernimmt das Maß.',
+  copiesDesk: 'So oft wird das ganze Raster gedruckt, z. B. für mehrere gleiche Schreibtische. Alle Exemplare werden zusammen so dicht wie möglich aufs Bett gepackt.',
   copies: 'So oft wird der ganze Einsatz mit Rahmen (Platten + Leisten) gedruckt, z. B. für mehrere gleiche Schubladen. Alle Exemplare werden zusammen so dicht wie möglich aufs Bett gepackt.',
   flat: 'Alle Platten passen nebeneinander auf ein Druckbett. Dann wird nicht gestapelt: nur PLA, kein PETG, kein Prime-Tower.',
   profi: 'Alle weiteren Einstellungen: Leistenform, Drucker, PETG-Trennschicht.',

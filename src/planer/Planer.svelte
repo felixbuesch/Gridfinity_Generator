@@ -1,8 +1,9 @@
 <script lang="ts">
   // Planer in drei Schritten: Maße → Raster → Drucken. Profi-Werte liegen in einer Schublade rechts.
-  import { onMount } from 'svelte';
-  import { loadOpts, saveOpts, clean, posText, TIPS, type Opts, type Align } from './opts';
-  import { plan, stats as calcStats, jobOf, jobName, jobWhat, buildZip, jobZip, offer, fmt, cellsOf, plateKey, spacerKey, PLA_DENSITY, GF } from './core.js';
+  import { onMount, tick } from 'svelte';
+  import { loadOpts, saveOpts, saveDims, clean, posText, TIPS, type Opts, type Align } from './opts';
+  import { plan, stats as calcStats, info, jobOf, jobName, jobWhat, buildZip, jobZip, offer, fmt, cellsOf, plateKey, spacerKey, projName, PLA_DENSITY, GF } from './core.js';
+  import NumIn from './NumIn.svelte';
   import Stage, { MiniView, partGroup, bedsGroup } from './stage.js';
 
   interface Use { id: 'desk' | 'drawer' | 'box'; name: string; area: string; hint: string; q: string }
@@ -16,7 +17,8 @@
   let sel: { kind: 'P' | 'R'; idx: number } | null = $state(null);
   let tip: { text: string; x: number; y: number } | null = $state(null);
   let busy: Record<string, string> = $state({});
-  let narrow = $state(false);
+  let narrow = $state(false), short = $state(false);
+  let popped = false;
 
   // Rechnen mit kurzer Verzögerung, damit Tippen flüssig bleibt
   let P: any = $state.raw(plan(clean(o)));
@@ -24,7 +26,7 @@
   $effect(() => {
     const snap = JSON.stringify(o);
     clearTimeout(timer);
-    timer = setTimeout(() => { saveOpts(JSON.parse(snap)); P = plan(clean(JSON.parse(snap))); }, 180);
+    timer = setTimeout(() => { const v = JSON.parse(snap); saveOpts(v); saveDims(use.id, Number(v.boxW), Number(v.boxD)); P = plan(clean(v)); }, 180);
   });
   const R = $derived(P.R);
   const S = $derived(calcStats(P));
@@ -37,11 +39,24 @@
       onPick: (s: any) => { sel = s; },
     });
     mv = new MiniView(mini);
-    const mq = matchMedia('(max-width: 760px)');
-    const upd = () => { narrow = mq.matches; stage.setPanel(narrow ? 0 : (panelEl?.offsetWidth || 380) + 40); };
-    mq.addEventListener('change', upd); upd();
+    // Handy und Tablet hochkant: 3D oben, Blatt unten. Flache Querformate (Handy quer): kompaktes Desktop-Layout
+    const mq = matchMedia('(max-width: 900px) and (min-height: 501px)'), mqs = matchMedia('(max-height: 500px)');
+    const upd = () => { narrow = mq.matches; short = mqs.matches; stage.setPanel(narrow ? 0 : (panelEl?.offsetWidth || 380) + 40, narrow ? 56 : 0); };
+    mq.addEventListener('change', upd); mqs.addEventListener('change', upd); upd();
+    // Zurück-Knopf des Browsers/Handys: erst Profi schließen, dann einen Schritt zurück, dann zum Startbildschirm
+    history.pushState({ gfPlaner: 1 }, '');
+    const onPop = () => {
+      if (profi) { closeProfi(); history.pushState({ gfPlaner: 1 }, ''); }
+      else if (sel) { sel = null; history.pushState({ gfPlaner: 1 }, ''); }
+      else if (step > 1) { go(step - 1); history.pushState({ gfPlaner: 1 }, ''); }
+      else { popped = true; onBack(); }
+    };
+    addEventListener('popstate', onPop);
     (window as any).__planer = { stage, setStep: (n: number) => (step = n), select: (s: any) => (sel = s), get P() { return P; }, zip: () => buildZip(P, use) };
-    return () => { stage.dispose(); mv.dispose(); mq.removeEventListener('change', upd); };
+    return () => {
+      stage.dispose(); mv.dispose(); mq.removeEventListener('change', upd); mqs.removeEventListener('change', upd); removeEventListener('popstate', onPop);
+      if (!popped && history.state && history.state.gfPlaner) history.back(); // eigenen Verlaufseintrag wieder entfernen
+    };
   });
   $effect(() => { if (stage) { stage.setPlan(P, use); if (sel && !(sel.kind === 'P' ? P.R.pieces?.[sel.idx] : P.R.spacers?.list[sel.idx])) sel = null; } });
   $effect(() => { if (stage) stage.goStep(step); });
@@ -85,19 +100,40 @@
     catch (e: any) { busy[id] = 'Fehler: ' + e.message; }
     setTimeout(() => { delete busy[id]; }, 6000);
   }
-  const zipAll = () => download('all', `gridfinity_${Math.round(o.boxW)}x${Math.round(o.boxD)}.zip`, () => buildZip(P, use));
-  const zipJob = (i: number) => download('job' + i, `${R.stacks[i].label}.zip`, () => jobZip(P, i));
-  const petgOf = (i: number) => { const m = P.mesh('S:' + i); return m.petg.f.length ? GF.volume(m.petg) * 1.27 : 0; };
-  const go = (n: number) => { step = n; sel = null; panelEl?.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const zipAll = () => download('all', `${projName(P, use)}.zip`, () => buildZip(P, use));
+  const zipJob = (i: number) => download('job' + i, `${projName(P, use)}_${R.stacks[i].label}.zip`, () => jobZip(P, i));
+  const petgOf = (i: number) => info(P, i).petg * 1.27;
+  let headEl: HTMLElement | undefined = $state();
+  // Schritt wechseln; den Fokus auf die neue Überschrift setzen, damit Tastatur-Nutzer nicht oben neu anfangen
+  const go = async (n: number) => {
+    const kb = document.activeElement && document.activeElement !== document.body && panelEl?.contains(document.activeElement);
+    step = n; sel = null; panelEl?.scrollTo({ top: 0, behavior: 'smooth' });
+    if (kb) { await tick(); headEl?.focus({ preventScroll: true }); }
+  };
+  // Teil aus der Teileliste wählen (Tastatur-Ersatz für das Anklicken in 3D)
+  const pickType = (kind: 'P' | 'R', t: any) => { const list = kind === 'P' ? R.pieces : R.spacers.list; const idx = list.findIndex((x: any) => x.type === t && !x.copy); if (idx >= 0) sel = { kind, idx }; };
+  // Stepper: wird ein Knopf gesperrt, Fokus auf den anderen
+  let decBtn: HTMLButtonElement | undefined = $state(), incBtn: HTMLButtonElement | undefined = $state();
+  const setCopies = async (v: number) => {
+    o.copies = Math.max(1, Math.min(20, v)); await tick();
+    if (document.activeElement === document.body || (document.activeElement as HTMLButtonElement)?.disabled) (o.copies <= 1 ? incBtn : decBtn)?.focus();
+  };
+  // Profi-Schublade: Fokus hinein und wieder zurück, Esc schließt
+  let drawerEl: HTMLElement | undefined = $state(), profiBtn: HTMLButtonElement | undefined = $state();
+  const openProfi = async () => { profi = true; await tick(); (drawerEl?.querySelector('button, input') as HTMLElement)?.focus({ preventScroll: true }); };
+  const closeProfi = () => { profi = false; profiBtn?.focus({ preventScroll: true }); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (profi) { e.preventDefault(); closeProfi(); } else if (sel) sel = null; } };
 
+  // [Wert, Beschriftung, min, max]
   const PROFI: [keyof Opts, string, number, number][] = [
-    ['minSpacer', 'Mindestbreite Leiste (mm)', 0.5, 0], ['spacerH', 'Leistenhöhe (mm)', 0.2, 0.6], ['rail', 'Schiene (mm)', 0.2, 0.8], ['ribPitch', 'Streben alle (mm)', 5, 8],
-    ['bedX', 'Bett X (mm)', 1, 50], ['bedY', 'Bett Y (mm)', 1, 50], ['bedZ', 'Höhe Z (mm)', 1, 10],
-    ['sepT', 'PETG-Basisschicht (mm)', 0.1, 0.1], ['overhang', 'Überhang (°)', 5, 20], ['maxStack', 'Max. Platten je Stapel', 1, 1], ['towerReserve', 'Platz Prime-Tower (mm)', 5, 0],
+    ['minSpacer', 'Mindestbreite Leiste (mm)', 0, 42], ['spacerH', 'Leistenhöhe (mm)', 0.6, 4.4], ['rail', 'Schiene (mm)', 0.8, 20], ['ribPitch', 'Streben alle (mm)', 8, 500],
+    ['bedX', 'Bett X (mm)', 50, 1000], ['bedY', 'Bett Y (mm)', 50, 1000], ['bedZ', 'Höhe Z (mm)', 10, 1000],
+    ['sepT', 'PETG-Basisschicht (mm)', 0.1, 5], ['overhang', 'Überhang (°)', 20, 70], ['maxStack', 'Max. Platten je Stapel', 1, 100], ['towerReserve', 'Platz Prime-Tower (mm)', 0, 200],
   ];
 </script>
 
-<div class="planer" class:narrow>
+<svelte:window onkeydown={onKey} />
+<div class="planer" class:narrow class:short>
   <canvas bind:this={canvas} class="stage" aria-label="3D-Ansicht: {use.name} mit Gridfinity-Raster" data-tip={TIPS.view}></canvas>
 
   <header class="top">
@@ -119,11 +155,11 @@
     <div class="pane">
       <div class="kick">Schritt {step} von 3</div>
       {#if step === 1}
-        <h2>{use.q}</h2>
+        <h2 bind:this={headEl} tabindex="-1">{use.q}</h2>
         <div class="dims">
-          <label data-tip={TIPS.boxW}><span>Breite</span><span class="in"><input type="number" inputmode="decimal" min="42" step="0.5" bind:value={o.boxW}><em>mm</em></span></label>
+          <label data-tip={TIPS.boxW}><span>Breite</span><span class="in"><NumIn bind:value={o.boxW} min={42} max={GF.MAX_DIM} /><em>mm</em></span></label>
           <span class="x">×</span>
-          <label data-tip={TIPS.boxD}><span>Tiefe</span><span class="in"><input type="number" inputmode="decimal" min="42" step="0.5" bind:value={o.boxD}><em>mm</em></span></label>
+          <label data-tip={TIPS.boxD}><span>Tiefe</span><span class="in"><NumIn bind:value={o.boxD} min={42} max={GF.MAX_DIM} /><em>mm</em></span></label>
         </div>
         <div class="fits" data-tip={TIPS.fit}>
           {#each [['boxW', fitW], ['boxD', fitD]] as [k, f]}
@@ -135,15 +171,16 @@
             </div>
           {/each}
         </div>
+        {#if R.error}<p class="err" role="alert">{R.error}</p>{/if}
         <p class="hint">{use.hint}</p>
         {#if !isDesk}
           <div class="row2">
-            <label class="f" data-tip={TIPS.clearance}>Spiel je Achse<input type="number" min="0" step="0.1" bind:value={o.clearance}></label>
-            <label class="f" data-tip={TIPS.cornerR}>Eckenradius<input type="number" min="0" step="0.5" bind:value={o.cornerR}></label>
+            <label class="f" data-tip={TIPS.clearance}>Spiel je Achse (mm)<NumIn bind:value={o.clearance} min={0} max={20} /></label>
+            <label class="f" data-tip={TIPS.cornerR}>Eckenradius (mm)<NumIn bind:value={o.cornerR} min={0} max={50} /></label>
           </div>
         {/if}
       {:else if step === 2}
-        <h2>Wo soll das Raster anliegen?</h2>
+        <h2 bind:this={headEl} tabindex="-1">Wo soll das Raster anliegen?</h2>
         <div class="posrow">
           <div class="pos" role="group" aria-label="Position des Rasters" data-tip={TIPS.pos}>
             {#each POS as [x, y, l]}
@@ -163,13 +200,13 @@
         {/if}
         {#if marg}<p class="hint">Rand: {marg}</p>{/if}
       {:else}
-        <h2>So wird gedruckt</h2>
-        <div class="copies" data-tip={TIPS.copies}>
-          <span>Anzahl Einsätze <em>mit Rahmen</em></span>
+        <h2 bind:this={headEl} tabindex="-1">So wird gedruckt</h2>
+        <div class="copies" data-tip={isDesk ? TIPS.copiesDesk : TIPS.copies}>
+          <span>{#if isDesk}Anzahl Raster{:else}Anzahl Einsätze <em>mit Rahmen</em>{/if}</span>
           <div class="stepper">
-            <button type="button" aria-label="Einen Einsatz weniger" disabled={o.copies <= 1} onclick={() => (o.copies = Math.max(1, (o.copies || 1) - 1))}>−</button>
-            <b>{o.copies || 1}</b>
-            <button type="button" aria-label="Einen Einsatz mehr" disabled={o.copies >= 20} onclick={() => (o.copies = Math.min(20, (o.copies || 1) + 1))}>+</button>
+            <button type="button" bind:this={decBtn} aria-label="Eins weniger" disabled={o.copies <= 1} onclick={() => setCopies((o.copies || 1) - 1)}>−</button>
+            <b aria-live="polite">{o.copies || 1}</b>
+            <button type="button" bind:this={incBtn} aria-label="Eins mehr" disabled={o.copies >= 20} onclick={() => setCopies((o.copies || 1) + 1)}>+</button>
           </div>
         </div>
         {#if R.flat}
@@ -189,31 +226,38 @@
         {#if !R.error}
           <div class="jobs">
             {#each R.stacks as s, i (s.label + i)}
-              {@const m = P.mesh('S:' + i)}
+              {@const m = info(P, i)}
               <div class="job">
                 <div class="jh"><span class="tag">{s.label}</span><b>{jobWhat(s)}</b></div>
-                <div class="jm">Höhe {fmt(m.height, 1)} mm{#if petgOf(i)} · PETG {fmt(petgOf(i), 0)} g{/if}</div>
+                <div class="jm">{`Höhe ${fmt(m.height, 1)} mm${m.petg ? ` · PETG ${fmt(petgOf(i), 0)} g` : ''}`}</div>
                 <button class="ghost" type="button" onclick={() => zipJob(i)} data-tip={TIPS.job}>Druckdatei ↓</button>
                 {#if busy['job' + i]}<span class="msg">{busy['job' + i]}</span>{/if}
               </div>
             {/each}
           </div>
           <details class="more"><summary>So druckst du in Bambu Studio</summary>
+            {#if o.stack && !R.flat}
             <ol>
               <li>Die 3MF des Druckbetts öffnen. PLA-Teil = Filament 1, PETG-Teil = Filament 2. Ausweichweg: <code>…_PLA.stl</code> und <code>…_PETG.stl</code> zusammen importieren und „als ein Objekt mit mehreren Teilen“ laden.</li>
               <li>X2D: PLA auf die linke Düse, PETG auf die rechte.</li>
               <li>Stützen aus, die Trennschichten sind schon im Modell. Prime-Tower an, Schichthöhe 0,2 mm.</li>
               <li>Nach dem Druck den Stapel von oben nach unten auseinanderziehen.</li>
             </ol>
+            {:else}
+            <ol>
+              <li>Die 3MF (oder die PLA-STL) des Druckbetts öffnen. Alles ist PLA.</li>
+              <li>Stützen aus, Schichthöhe 0,2 mm.</li>
+            </ol>
+            {/if}
           </details>
           <details class="more"><summary>Teileliste</summary>
             <table>
               <tbody>
                 {#each R.types as t}
-                  <tr><td><span class="tag">{t.label}</span> Platte</td><td class="n">{cellsOf(t.rep)}</td><td class="n">{fmt(t.rep.w)} × {fmt(t.rep.d)}</td><td class="n">{t.pieces.length}×</td></tr>
+                  <tr><td><button class="pick" type="button" onclick={() => pickType('P', t)} aria-label="Platte {t.label} zeigen"><span class="tag">{t.label}</span> Platte</button></td><td class="n">{cellsOf(t.rep)}</td><td class="n">{fmt(t.rep.w)} × {fmt(t.rep.d)}</td><td class="n">{t.pieces.length}×</td></tr>
                 {/each}
                 {#each R.spacers.types as t}
-                  <tr><td><span class="tag">{t.label}</span> Leiste</td><td class="n">–</td><td class="n">{fmt(t.w, 1)} × {fmt(t.d, 1)}</td><td class="n">{t.items.length}×</td></tr>
+                  <tr><td><button class="pick" type="button" onclick={() => pickType('R', t)} aria-label="Leiste {t.label} zeigen"><span class="tag">{t.label}</span> Leiste</button></td><td class="n">–</td><td class="n">{fmt(t.w, 1)} × {fmt(t.d, 1)}</td><td class="n">{t.items.length}×</td></tr>
                 {/each}
               </tbody>
             </table>
@@ -222,11 +266,11 @@
       {/if}
 
       {#if R.error}
-        <p class="err">{R.error}</p>
+        {#if step > 1}<p class="err" role="alert">{R.error}</p>{/if}
       {:else if S}
         <div class="stats">
           <div><b>{S.nx} × {S.ny}</b><span>Felder</span></div>
-          <div><b>{S.plates}{S.spacers ? ' + ' + S.spacers : ''}</b><span>Platten{S.spacers ? ' + Leisten' : ''}{(o.copies || 1) > 1 ? ` · ${o.copies} Einsätze` : ''}</span></div>
+          <div><b>{S.plates}{S.spacers ? ' + ' + S.spacers : ''}</b><span>Platten{S.spacers ? ' + Leisten' : ''}</span>{#if (o.copies || 1) > 1}<span class="sub">{o.copies} {isDesk ? 'Raster' : 'Einsätze'}</span>{/if}</div>
           <div><b>{S.jobs}</b><span>{S.jobs === 1 ? 'Druckjob' : 'Druckjobs'}</span></div>
           {#if step === 3}<div><b>{fmt(S.pla, 0)} g</b><span>PLA</span></div>{#if S.petg}<div><b>{fmt(S.petg, 0)} g</b><span>PETG{S.flips ? ` · ${S.flips} Platten` : ''}{S.flipSp ? ` + ${S.flipSp} Leisten` : ''}</span></div>{/if}{/if}
         </div>
@@ -238,12 +282,12 @@
         <button class="go" type="button" disabled={!!R.error} onclick={zipAll} data-tip={TIPS.zip}>Alles als ZIP <span>↓</span></button>
         {#if busy.all}<p class="msg c">{busy.all}</p>{/if}
       {/if}
-      <button class="profi-btn" type="button" onclick={() => (profi = true)} data-tip={TIPS.profi}>⚙ Profi-Einstellungen</button>
+      <button class="profi-btn" type="button" bind:this={profiBtn} onclick={openProfi} data-tip={TIPS.profi} aria-expanded={profi}>⚙ Profi-Einstellungen</button>
     </div>
     {/key}
   </aside>
 
-  <section class="card" class:hidden={!card && step === 3}>
+  <section class="card" class:hidden={!card && (step === 3 || narrow || short)} class:picked={!!card}>
     <canvas bind:this={mini} aria-label={card ? 'Gewähltes Teil in 3D' : 'Druckbetten in der Übersicht'}></canvas>
     {#if card}
       <div class="ch"><span class="tag">{card.tag}</span><b>{card.title}</b>{#if card.sub}<em>{card.sub}</em>{/if}<button class="x" type="button" aria-label="Auswahl schließen" onclick={() => (sel = null)}>×</button></div>
@@ -259,9 +303,9 @@
     {/if}
   </section>
 
-  <div class="scrim" class:on={profi} onclick={() => (profi = false)} role="presentation"></div>
-  <aside class="drawer" class:on={profi} aria-hidden={!profi}>
-    <div class="dh"><b>Profi-Einstellungen</b><button class="x" type="button" aria-label="Schließen" onclick={() => (profi = false)}>×</button></div>
+  <div class="scrim" class:on={profi} onclick={closeProfi} role="presentation"></div>
+  <aside class="drawer" class:on={profi} aria-hidden={!profi} inert={!profi} bind:this={drawerEl} aria-label="Profi-Einstellungen">
+    <div class="dh"><b>Profi-Einstellungen</b><button class="x" type="button" aria-label="Schließen" onclick={closeProfi}>×</button></div>
     <div class="f" data-tip={TIPS.spacerStyle}>Leistenform
       <div class="seg">
         <button type="button" aria-pressed={o.spacerStyle === 'ladder'} onclick={() => (o.spacerStyle = 'ladder')}>Leiter (sparsam)</button>
@@ -276,12 +320,12 @@
       </div>
     </div>
     <div class="grid2">
-      {#each PROFI as [k, l, st, mn]}
+      {#each PROFI as [k, l, mn, mx]}
         {@const locked = k === 'spacerH' && o.stack && o.sepStyle === 'flip'}
-        <label class="f" data-tip={locked ? 'Bei Wendeplatte sind die Leisten so hoch wie eine Platte (4,4 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}<input type="number" step={st} min={mn} bind:value={o[k] as number} disabled={locked}></label>
+        <label class="f" data-tip={locked ? 'Bei Wendeplatte sind die Leisten so hoch wie eine Platte (4,4 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}<NumIn bind:value={o[k] as number} min={mn} max={mx} disabled={locked} /></label>
       {/each}
     </div>
-    <p class="hint">Bambu Lab X2D im Zwei-Düsen-Druck: 235,5 × 256 × 256 mm.</p>
+    <p class="hint">Werte außerhalb der Grenzen werden beim Rechnen auf den nächsten gültigen Wert gesetzt. Bambu Lab X2D im Zwei-Düsen-Druck: 235 × 256 × 256 mm.</p>
   </aside>
 </div>
 
@@ -312,9 +356,8 @@
   .dims label { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8f867c; min-width: 0; }
   .in { display: flex; align-items: baseline; gap: 6px; border-bottom: 2px solid rgba(255,255,255,.14); transition: border-color .2s; }
   .in:focus-within { border-color: var(--accent); }
-  .in input { all: unset; width: 100%; min-width: 0; font: 600 34px var(--f-mono); color: #fff; padding: 2px 0 6px; -moz-appearance: textfield; appearance: textfield; }
-  .in input::-webkit-outer-spin-button, .in input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .in em { font: 500 13px var(--f-mono); font-style: normal; color: #8f867c; }
+  .in :global(input) { all: unset; width: 100%; min-width: 0; font: 600 34px var(--f-mono); color: #fff; padding: 2px 0 6px; -moz-appearance: textfield; appearance: textfield; }
+    .in em { font: 500 13px var(--f-mono); font-style: normal; color: #8f867c; }
   .x { font: 400 22px var(--f-mono); color: #5e564e; padding-bottom: 12px; }
   .hint { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.45; }
   .fits { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: -6px; }
@@ -322,6 +365,10 @@
   .fits .fl { width: 100%; font-family: var(--f-ui); font-size: 11.5px; }
   .fits button { all: unset; cursor: pointer; color: #d9d0c5; border-bottom: 1px dotted rgba(242,166,90,.5); }
   .fits button:hover, .fits button:focus-visible { color: var(--accent); }
+  .fits button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  .in:focus-within { box-shadow: 0 2px 0 var(--accent); }
+  :global(input[aria-invalid=true]) { color: var(--warn) !important; }
+  h2:focus { outline: none; }
   .copies { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
   .copies em { font-style: normal; color: var(--muted); font-size: 12.5px; margin-left: 4px; }
   .stepper { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
@@ -332,9 +379,9 @@
   .flat { margin: 0; font-size: 13.5px; color: #d9d0c5; background: rgba(242,166,90,.08); border: 1px solid rgba(242,166,90,.25); border-radius: 10px; padding: 10px 12px; }
   .row2, .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .f { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); min-width: 0; }
-  .f input { font: 500 15px var(--f-mono); color: var(--ink); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; width: 100%; min-width: 0; }
-  .f input:disabled { opacity: .45; }
-  .f input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+  .f :global(input) { font: 500 15px var(--f-mono); color: var(--ink); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; width: 100%; min-width: 0; }
+  .f :global(input:disabled) { opacity: .45; }
+  .f :global(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 0; }
   .seg { display: inline-flex; flex-wrap: nowrap; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; align-self: flex-start; }
   .seg.wrap { flex-wrap: wrap; }
   .seg button { font: 500 13px var(--f-ui); background: transparent; color: var(--ink); border: 0; padding: 8px 11px; cursor: pointer; }
@@ -353,12 +400,13 @@
   .stats div { flex: 1 1 70px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); border-radius: 10px; padding: 8px 10px; }
   .stats b { display: block; font: 600 18px var(--f-mono); color: #fff; white-space: nowrap; }
   .stats span { font-size: 12px; color: #8f867c; }
+  .stats .sub { display: block; color: var(--accent); }
   .pe { color: var(--petg); font-weight: 600; }
-  .err { color: var(--warn); font-weight: 600; font-size: 14px; margin: 0; }
-  .go { width: 100%; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font: 700 16px var(--f-ui); padding: 15px 18px; cursor: pointer; display: flex; justify-content: center; gap: 10px; transition: transform .15s, box-shadow .2s, opacity .2s; }
+  .err { color: var(--warn); font-weight: 600; font-size: 14px; margin: 0; background: rgba(240,179,106,.08); border: 1px solid rgba(240,179,106,.3); border-radius: 10px; padding: 9px 11px; }
+  .go { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -10px 20px rgba(18,14,11,.9) !important; width: 100%; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font: 700 16px var(--f-ui); padding: 15px 18px; cursor: pointer; display: flex; justify-content: center; gap: 10px; transition: transform .15s, box-shadow .2s, opacity .2s; }
   .go:hover:not(:disabled) { box-shadow: 0 0 34px rgba(242,166,90,.45); transform: translateY(-1px); }
   .go span { transition: transform .2s; } .go:hover span { transform: translateX(3px); }
-  .go:disabled { opacity: .35; cursor: not-allowed; }
+  .go:disabled { background: #3a2c20; color: rgba(255,255,255,.4); cursor: not-allowed; }
   .profi-btn { background: none; border: 0; color: var(--muted); font: 500 13px var(--f-ui); cursor: pointer; padding: 4px; align-self: center; }
   .profi-btn:hover { color: var(--ink); }
   .jobs { display: flex; flex-direction: column; gap: 8px; }
@@ -373,9 +421,12 @@
   .more summary { cursor: pointer; font: 600 14px var(--f-ui); color: var(--ink); padding: 4px 0; }
   .more ol { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; color: #d9d0c5; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  .pick { all: unset; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; border-radius: 6px; }
+  .pick:hover { color: var(--accent); }
+  .pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   td { padding: 6px 4px; border-bottom: 1px solid var(--line); } td.n { font-family: var(--f-mono); white-space: nowrap; text-align: right; }
 
-  .card { position: absolute; left: max(20px, env(safe-area-inset-left, 0px)); bottom: 20px; width: 300px; background: rgba(18,14,11,.8); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 10px; display: flex; flex-direction: column; gap: 8px; transition: opacity .3s, transform .3s; }
+  .card { position: absolute; left: max(20px, env(safe-area-inset-left, 0px)); bottom: 20px; width: 260px; z-index: 3; background: rgba(18,14,11,.8); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 10px; display: flex; flex-direction: column; gap: 8px; transition: opacity .3s, transform .3s; }
   .card.hidden { opacity: 0; transform: translateY(12px); pointer-events: none; }
   .card canvas { width: 100%; aspect-ratio: 16 / 10; border-radius: 10px; display: block; touch-action: none; }
   .ch { display: flex; align-items: center; gap: 8px; padding: 0 4px; } .ch em { font-style: normal; color: var(--muted); font-size: 13px; margin-left: auto; }
@@ -400,6 +451,30 @@
   .planer.narrow .steps { margin-right: 0; }
   .planer.narrow .steps button { padding: 6px 9px 6px 6px; font-size: 13px; }
   .planer.narrow .panel { left: 0; right: 0; top: 46%; bottom: 0; width: auto; border-radius: 18px 18px 0 0; }
-  .planer.narrow .card { display: none; }
+  /* Teilekarte auf dem Handy: nur wenn ein Teil gewählt ist, als Blatt unten über dem Panel */
+  .planer.narrow .card:not(.picked), .planer.short .card:not(.picked) { display: none; }
+  .planer.narrow .card.picked { background: #120e0b; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom, 0px)); width: auto; flex-direction: row; flex-wrap: wrap; z-index: 6; box-shadow: 0 -10px 40px rgba(0,0,0,.6); }
+  .planer.narrow .card.picked canvas { width: 30%; aspect-ratio: 1; order: 1; }
+  .planer.narrow .card.picked dl { flex: 1; align-content: start; font-size: 12.5px; order: 2; }
+  .planer.narrow .card.picked .ch { width: 100%; order: 0; }
+  .planer.narrow .card.picked .cj { width: 100%; order: 3; }
+  .planer.short .card.picked { width: 240px; bottom: 8px; }
+  .planer.short .card.picked canvas { display: none; }
+  /* Handy: größere Tippflächen */
+  .planer.narrow .fits button { padding: 6px 2px; }
+  .planer.narrow .fits div { font-size: 13px; }
+  .planer.narrow .pos { grid-template-columns: repeat(3, 40px); grid-template-rows: repeat(3, 40px); }
+  .planer.narrow .stepper button { width: 46px; height: 44px; }
+  .planer.narrow .seg button { min-height: 42px; }
+  .planer.narrow .kick { font-size: 12px; }
+  /* flache Querformate (Handy quer): kompakter Kopf, Panel fast volle Höhe */
+  .planer.short .top { padding-top: 8px; gap: 8px; }
+  .planer.short .brand { display: none; }
+  .planer.short .panel { top: 56px; bottom: 8px; }
+  .planer.short .pane { padding: 14px 16px 12px; gap: 10px; }
+  .planer.short h2 { font-size: 19px; }
+  .planer.short .in :global(input) { font-size: 26px; }
+  /* kleine Laptops / großer Browserzoom: Übersichtskarte nur, wenn genug Platz ist */
+  @media (max-height: 640px), (max-width: 1100px) { .planer:not(.narrow) .card:not(.picked) { display: none; } }
   @media (prefers-reduced-motion: reduce) { .pane { animation: none; } .drawer, .card { transition: none; } }
 </style>

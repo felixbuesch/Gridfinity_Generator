@@ -22,7 +22,10 @@ function back() {
 
 // Hover-Hilfen: jedes Element mit data-tip zeigt nach kurzer Zeit einen Hinweis
 (() => {
-  const tip = document.getElementById('ftip'); let timer = null, cur = null;
+  const tip = document.getElementById('ftip'); let timer = null, cur = null, touch = matchMedia('(hover: none)').matches;
+  // Touch: keine Hinweise beim Antippen (sie blieben stehen und verdeckten Felder)
+  document.addEventListener('pointerdown', (e) => { touch = e.pointerType === 'touch' || e.pointerType === 'pen'; }, { capture: true });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Tab') touch = false; }, { capture: true });
   const place = (el) => {
     const r = el.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
     const x = Math.min(Math.max(8, r.left), window.innerWidth - tw - 8);
@@ -37,7 +40,8 @@ function back() {
     clearTimeout(timer); if (!el || el.tagName === 'CANVAS') { hide(); return; }
     timer = setTimeout(() => show(el), 400);
   });
-  document.addEventListener('focusin', (e) => { const el = e.target.closest && e.target.closest('[data-tip]'); if (el && el.tagName !== 'CANVAS') show(el); });
+  document.addEventListener('focusin', (e) => { if (touch) return; const el = e.target.closest && e.target.closest('[data-tip]'); if (el && el.tagName !== 'CANVAS') show(el); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
   document.addEventListener('focusout', hide);
   document.addEventListener('pointerdown', hide);
   window.addEventListener('scroll', hide, { passive: true, capture: true });

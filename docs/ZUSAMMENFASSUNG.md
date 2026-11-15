@@ -166,3 +166,16 @@ Bitte:
    Bambu-Studio-Projektformat.
 Antworte auf Deutsch.
 ```
+
+### Kundentest 1 (15. Nov. 2026): 5 virtuelle Kunden, 26 Punkte behoben
+- Maßfelder nehmen Komma und Punkt (NumIn.svelte); höchstens 2000 mm je Richtung (`MAX_DIM`), sonst Hinweis.
+- `partitions()` begrenzt: bei sehr vielen Zellen nur ausgewogene Zerlegungen → 2000 × 2000 mm in ~20 ms statt Minuten.
+- Gewicht/Höhe je Job über `stackInfo()` (Volumen je Teiletyp, ohne Netze); Druckbetten in 3D erst in Schritt 3.
+- Export: quer liegende Jobs werden für die Datei gedreht (`toBed`), Dateien sind nie breiter als Bett X.
+- Flach drucken probiert bis zu 8 Aufteilungen (z. B. 400 × 120 jetzt flach).
+- Profi-Werte und Spiel begrenzt (`clean()`), Druckhöhe < Plattenhöhe → Fehlermeldung.
+- Maße je Einsatzort gespeichert (`gf-intro-v1`), überleben Zurück und Neuladen.
+- Handy: Teilekarte als Blatt unten, keine Tooltips bei Touch, größere Tippflächen, Fehlermeldung direkt unter den Maßen; Tablet hochkant = Handy-Layout; Handy quer = kompaktes Layout.
+- Browser-Zurück: Profi schließen → Auswahl aufheben → Schritt zurück → Startbildschirm.
+- Tastatur: Profi-Schublade `inert` wenn zu, Esc schließt, Fokus wandert mit; Teileliste-Einträge wählen Teile; reduzierte Bewegung respektiert.
+- LIESMICH: flach/gestapelt richtig, Dezimalkomma, Exemplar-Nummern, halbe Zellen als ½; Dateinamen mit Projekt und lesbaren Maßen.

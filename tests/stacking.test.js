@@ -141,8 +141,11 @@ describe('Maße ohne Leisten', () => {
 describe('mehrere Einsätze', () => {
   it.each([[150, 100, 3], [400, 300, 3], [300, 200, 4]])('%s × %s mm, %s Stück: alles da, möglichst in einem Druckjob', (w, d, n) => {
     const one = GF.compute({ ...BASE, boxW: w, boxD: d }), R = GF.compute({ ...BASE, boxW: w, boxD: d, copies: n });
-    expect(R.pieces).toHaveLength(one.pieces.length * n);
-    expect(R.spacers.list).toHaveLength(one.spacers.list.length * n);
+    // je Exemplar dieselben Teile (die Aufteilung darf sich ändern, z. B. flach statt gestapelt)
+    for (let c = 0; c < n; c++) expect(R.pieces.filter((p) => p.copy === c).length).toBe(R.pieces.length / n);
+    const ar = (l) => l.reduce((a, q) => a + (q.x1 - q.x0) * (q.y1 - q.y0), 0);
+    expect(ar(R.spacers.list)).toBeCloseTo(ar(one.spacers.list) * n, 4);
+    expect(R.pieces.reduce((a, p) => a + p.w * p.d, 0)).toBeCloseTo(one.pieces.reduce((a, p) => a + p.w * p.d, 0) * n, 6);
     const placedP = R.stacks.reduce((a, s) => a + s.items.length, 0), placedS = R.stacks.reduce((a, s) => a + s.spacers.length, 0);
     expect(placedP).toBe(R.pieces.length); expect(placedS).toBe(R.spacers.list.length);
     expect(R.stacks).toHaveLength(1);
@@ -182,5 +185,37 @@ describe('Außenrand oben', () => {
       if (d > 1e-6) dmin = Math.min(dmin, d);
     }
     expect(dmin).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('Kundentest-Fixes', () => {
+  const ext = (m) => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (let i = 0; i < m.v.length; i += 3) { x0 = Math.min(x0, m.v[i]); x1 = Math.max(x1, m.v[i]); y0 = Math.min(y0, m.v[i + 1]); y1 = Math.max(y1, m.v[i + 1]); } return [x1 - x0, y1 - y0]; };
+  it.each([[523.5, 287.2, 'grow', true], [400, 300, 'grow', false], [600, 450, 'flip', false], [400, 300, 'grow', false, 'integrated']])('Exportierte Druckbetten passen in X/Y aufs Bett (%s × %s, %s)', (w, d, sepStyle, half, spacers = 'separate') => {
+    const o = { ...BASE, boxW: w, boxD: d, sepStyle, half, spacers };
+    const R = GF.compute(o);
+    for (const s of R.stacks) {
+      const m = GF.stackMeshes(s, o);
+      const [ex, ey] = ext(GF.toBed(m.pla, s));
+      expect(ex).toBeLessThanOrEqual(o.bedX + 1e-6); expect(ey).toBeLessThanOrEqual(o.bedY + 1e-6);
+    }
+  });
+  it('400 × 120 passt flach (mehrere Aufteilungen probiert)', () => {
+    const R = GF.compute({ ...BASE, boxW: 400, boxD: 120 });
+    expect(R.flat).toBe(true); expect(R.stacks).toHaveLength(1);
+  });
+  it('zu große Maße und zu kleine Druckhöhe geben eine Meldung statt zu rechnen', () => {
+    expect(GF.compute({ ...BASE, boxW: 2500, boxD: 300 }).error).toMatch(/Höchstens/);
+    expect(GF.compute({ ...BASE, boxW: 400, boxD: 300, bedZ: 3 }).error).toMatch(/Druckhöhe/);
+  });
+  it('2000 × 2000 mm rechnet schnell', () => {
+    const t = Date.now(); const R = GF.compute({ ...BASE, boxW: 2000, boxD: 2000 });
+    expect(R.error).toBeUndefined(); expect(Date.now() - t).toBeLessThan(2000);
+  });
+  it.each(['grow', 'flip', 'ring', 'wedge', 'sheet'])('stackInfo = Werte aus den echten Netzen (%s)', (sepStyle) => {
+    const o = { ...BASE, boxW: 600, boxD: 450, sepStyle, copies: 2 };
+    for (const s of GF.compute(o).stacks) {
+      const m = GF.stackMeshes(s, o), i = GF.stackInfo(s, o);
+      expect(i.pla).toBeCloseTo(GF.volume(m.pla), 6); expect(i.petg).toBeCloseTo(m.petg.f.length ? GF.volume(m.petg) : 0, 6); expect(i.height).toBeCloseTo(m.height, 9);
+    }
   });
 });
