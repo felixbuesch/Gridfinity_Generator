@@ -128,6 +128,7 @@
   const PROFI: [keyof Opts, string, number, number][] = [
     ['minSpacer', 'Mindestbreite Leiste (mm)', 0, 42], ['spacerH', 'Leistenhöhe (mm)', 0.6, 4.4], ['rail', 'Schiene (mm)', 0.8, 20], ['ribPitch', 'Streben alle (mm)', 8, 500],
     ['bedX', 'Bett X (mm)', 50, 1000], ['bedY', 'Bett Y (mm)', 50, 1000], ['bedZ', 'Höhe Z (mm)', 10, 1000],
+    ['connFit', 'Spiel Verbindung (mm)', 0, 0.5],
     ['sepT', 'PETG-Basisschicht (mm)', 0.1, 5], ['overhang', 'Überhang (°)', 20, 70], ['maxStack', 'Max. Platten je Stapel', 1, 100], ['towerReserve', 'Platz Prime-Tower (mm)', 0, 200],
   ];
 </script>
@@ -222,6 +223,15 @@
             </div>
           </div>
           {#if o.sepStyle === 'flip'}<p class="hint">Jede zweite Platte wird aus <b class="pe">PETG kopfüber</b> gedruckt und trennt die PLA-Platten. Nach dem Druck umdrehen, dann ist sie eine normale Grundplatte. Die Leisten sind dann 4,4 mm hoch und wechseln im Turm genauso zwischen PLA und <b class="pe">PETG</b>. In der 3D-Ansicht orange.</p>{/if}
+        {/if}
+        {#if !R.error && R.pieces.length > (o.copies || 1)}
+          <div class="f" data-tip={TIPS.connect}>Platten verbinden
+            <div class="seg">
+              {#each [['none', 'keine'], ['tabs', 'Zapfen'], ['bridges', 'Brücken']] as [v, l]}
+                <button type="button" aria-pressed={(o.connect || 'none') === v} onclick={() => (o.connect = v as Opts['connect'])}>{l}</button>
+              {/each}
+            </div>
+          </div>
         {/if}
         {#if !R.error}
           <div class="jobs">

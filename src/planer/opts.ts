@@ -6,6 +6,7 @@ export interface Opts {
   boxW: number; boxD: number; clearance: number; cornerR: number; minSpacer: number; half: boolean;
   spacers: 'separate' | 'integrated'; spacerStyle: 'ladder' | 'solid'; alignX: Align; alignY: Align;
   spacerH: number; rail: number; ribPitch: number; bedX: number; bedY: number; bedZ: number;
+  connect: 'none' | 'tabs' | 'bridges'; connFit: number;
   copies: number; stack: boolean; sepStyle: 'grow' | 'ring' | 'wedge' | 'sheet' | 'flip'; sepT: number; overhang: number; maxStack: number; towerReserve: number;
 }
 
@@ -35,6 +36,8 @@ export function clean(o: Opts) {
   c.copies = lim(Math.round(c.copies), 1, 20);
   c.sepT = lim(c.sepT, 0.1, 5); c.overhang = lim(c.overhang, 20, 70);
   c.spacerH = lim(c.spacerH, 0.6, 4.4); // höher als die Platte stört die Boxen
+  c.connFit = lim(c.connFit, 0, 0.5);
+  if (!['none', 'tabs', 'bridges'].includes(c.connect)) c.connect = 'none';
   c.rail = lim(c.rail, 0.8, 20); c.ribPitch = lim(c.ribPitch, 8, 500);
   c.wedgeDepth = c.sepStyle === 'wedge' ? 1 : 0;
   return c;
@@ -76,6 +79,8 @@ export const TIPS: Record<string, string> = {
   overhang: 'Wie flach das PETG nach außen wachsen darf, gemessen von der Senkrechten. 45° druckt sicher ohne Stützen.',
   maxStack: 'Höchstens so viele Platten pro Druckjob. Weniger heißt kürzere Jobs, aber evtl. mehr Druckjobs.',
   towerReserve: 'Platz, der auf dem Bett für den Prime-Tower frei bleibt. Er wird beim Wechsel PLA/PETG gebraucht.',
+  connect: 'Hält die einzelnen Grundplatten an der Unterseite zusammen. Zapfen: Schwalbenschwanz direkt an der Platte, greift in die Nachbarplatte. Brücken: kleine Extrateile, die von unten in Taschen beider Platten gesteckt werden; die Platten selbst bleiben ohne Überstand. Oberseite und Außenrand bleiben gleich.',
+  connFit: 'Luft zwischen Zapfen bzw. Brücke und Tasche je Seite. 0,15 mm sitzt bei 0,4-mm-Düse stramm, lässt sich aber noch von Hand fügen. Klemmt es: größer. Wackelt es: kleiner.',
   toIntro: 'Zurück zur Auswahl Schreibtisch, Schublade oder Box.',
   fit: 'Bei diesen Innenmaßen geht das Raster genau auf und es braucht keine Leisten: ↓ das nächstkleinere Maß, ↑ das nächstgrößere (eine Reihe mehr). Klick übernimmt das Maß.',
   copiesDesk: 'So oft wird das ganze Raster gedruckt, z. B. für mehrere gleiche Schreibtische. Alle Exemplare werden zusammen so dicht wie möglich aufs Bett gepackt.',

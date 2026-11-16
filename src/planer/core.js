@@ -64,7 +64,8 @@ export function jobOf(P, sel) {
   return { i, level, of: sp.job.spacers.filter((q) => e && q.x === e.x && q.y === e.y).length, spacer: true, flip: GF.flipMode(P.o) && level % 2 === 1 };
 }
 export const jobName = (st) => (st.items.length ? (st.items.length > 1 ? 'Stapel ' : 'Druckjob ') + st.label : 'Leisten-Bett ' + st.label);
-export const jobWhat = (st) => [st.items.length ? st.items.length + (st.items.length > 1 ? ' Platten' : ' Platte') : '', st.spacers.length ? st.spacers.length + ' Leisten' : ''].filter(Boolean).join(' + ');
+export const bridgeCount = (st) => (st.bridges || []).reduce((a, e) => a + e.sp.type.n, 0);
+export const jobWhat = (st) => [st.items.length ? st.items.length + (st.items.length > 1 ? ' Platten' : ' Platte') : '', st.spacers.length ? st.spacers.length + ' Leisten' : '', bridgeCount(st) ? bridgeCount(st) + ' Brücken' : ''].filter(Boolean).join(' + ');
 
 export function filesFor(P, key) {
   const { R } = P, [kind, i] = key.split(':'), out = [];
@@ -78,7 +79,7 @@ export function filesFor(P, key) {
     const s = R.stacks[i], m = P.mesh(key);
     // liegt der Job intern quer, für die Datei richtig herum aufs Bett drehen (X <= Bett X)
     const pla = GF.toBed(m.pla, s), petg = GF.toBed(m.petg, s);
-    const base = `${s.label}_${s.items.map((it) => it.p.type.label).join('')}${s.spacers.length ? (s.items.length ? '_mit_' : '') + s.spacers.length + 'Leisten' : ''}`;
+    const base = `${s.label}_${s.items.map((it) => it.p.type.label).join('')}${s.spacers.length ? (s.items.length ? '_mit_' : '') + s.spacers.length + 'Leisten' : ''}${bridgeCount(s) ? '_' + bridgeCount(s) + 'Bruecken' : ''}`;
     out.push([base + '_PLA.stl', GF.stl(pla, base + ' PLA')]);
     if (petg.f.length) out.push([base + '_PETG.stl', GF.stl(petg, base + ' PETG')]);
     // Bambu-Studio-Projekt: PLA-Teil auf Filament 1, PETG-Teil auf Filament 2
@@ -99,6 +100,8 @@ export function readme(P, use) {
   if (n > 1) L.push(`Anzahl: ${n} gleiche Einsätze. Jede Platte und Leiste unten gibt es ${n}-mal (Exemplar 1 bis ${n}).`);
   L.push(`Raster: ${cellCount(R.AX.cells)} × ${cellCount(R.AY.cells)} Zellen (${R.AX.cells.map((c) => mm(c)).join(' + ')} / ${R.AY.cells.map((c) => mm(c)).join(' + ')} mm)`);
   L.push(`Abstandshalter links/rechts: ${mm(R.AX.mLow)} / ${mm(R.AX.mHigh)} mm, vorne/hinten: ${mm(R.AY.mLow)} / ${mm(R.AY.mHigh)} mm (${o.spacers === 'separate' ? 'separate Leisten, ' + (o.spacerStyle === 'solid' ? 'voll' : 'Leiter') + ', Höhe ' + mm(GF.spacerHeight(o)) + ' mm' : 'in Platten integriert'})`);
+  if (o.connect === 'tabs') L.push(`Verbindung: Zapfen (Schwalbenschwanz) an der Unterseite der Stoßkanten, Spiel ${mm(o.connFit)} mm je Seite. Zapfen rechts und hinten, Taschen links und vorne. Platten von oben ineinander setzen.`);
+  if (o.connect === 'bridges') L.push(`Verbindung: ${R.bridges.count} Brücken (${mm(R.bridges.size[0], 1)} × ${mm(R.bridges.size[1], 1)} × ${mm(R.bridges.size[2], 1)} mm) plus ${R.bridges.total - R.bridges.count} Reserve, Spiel ${mm(o.connFit)} mm je Seite. Brücken an den Stoßkanten auf den Boden legen und die Platten darauf drücken, oder von unten in die Taschen stecken.`);
   L.push(`Druckbett: ${mm(o.bedX)} × ${mm(o.bedY)} × ${mm(o.bedZ)} mm${stacked ? ', Reserve Prime-Tower ' + mm(o.towerReserve) + ' mm' : ''}`, '');
   const ox = R.AX.gapLow, oy = R.AY.gapLow, one = R.pieces.filter((p) => !p.copy);
   L.push('Platten (Position = linke vordere Ecke, gemessen ab linker und vorderer Wand, mm):');
@@ -128,6 +131,7 @@ export function buildZip(P, use) {
   R.stacks.forEach((s, i) => filesFor(P, 'S:' + i).forEach(([n, d]) => files.push(['druckbetten/' + n, d])));
   R.types.forEach((t, i) => filesFor(P, 'P:' + i).forEach(([n, d]) => files.push(['einzelteile/platten/' + n, d])));
   R.spacers.types.forEach((t, i) => filesFor(P, 'R:' + i).forEach(([n, d]) => files.push(['einzelteile/leisten/' + n, d])));
+  if (R.bridges && R.bridges.count) files.push([`einzelteile/Bruecke_${fnum(R.bridges.size[0], 1)}x${fnum(R.bridges.size[1], 1)}x${fnum(R.bridges.size[2], 1)}mm_${R.bridges.total}Stueck.stl`, GF.stl(GF.bridgeMesh(P.o.connFit), 'Bruecke')]);
   files.push(['LIESMICH.txt', readme(P, use)]);
   return GF.zip(files);
 }

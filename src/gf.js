@@ -11,6 +11,20 @@ const GF = (() => {
   // Eckrundung der Wand (Schublade/Box): alle Teile bleiben innerhalb der Wandrundung minus Spiel
   const MIN_ROUND = 0.2;   // mm: kleinere Rundungen werden nicht geschnitten
   const ARC_SAG = 0.02;    // mm: größte Abweichung der Sehnen vom Kreisbogen
+  // Verbindungen zwischen Grundplatten: Schwalbenschwanz an der Unterseite, mittig je Zelle an jeder Stoßkante.
+  // Der Rand einer Zelle ist unten 2,85 mm und von 0,7 bis 2,5 mm Höhe 2,15 mm massiv, darüber wird er schmaler.
+  // Die Tasche bleibt deshalb unter 2,5 mm Höhe und 1,35 mm tief: dahinter bleiben 0,8 mm Wand, oben bleibt alles unberührt.
+  const CONN = {
+    depth: 1.2,    // mm: so weit ragt ein Zapfen über die Stoßkante (Brücke: je Seite)
+    neck: 6,       // mm: Breite an der Stoßkante
+    flank: 45,     // Grad: Hinterschnitt der Flanken; Kopf = neck + 2 · depth · tan(flank)
+    height: 2.3,   // mm: Höhe von Zapfen und Brücke ab Unterseite
+    pocketH: 2.5,  // mm: Höhe der Tasche (0,2 mm Luft über dem Zapfen = eine Schicht)
+    fit: 0.15,     // mm: Spiel je Flanke und an der Zapfenspitze (Standard)
+    blockN: 10,    // Brücken je Reihe auf dem Druckbett
+    blockGap: 2,   // mm: Abstand der Brücken auf dem Druckbett
+    spare: 2,      // Brücken zusätzlich als Reserve
+  };
   const MIN_POCKET = 150;  // mm²: bleibt vom Taschenboden einer beschnittenen Zelle weniger, wird sie massiv
 
   // ---------- mesh builder ----------
@@ -152,7 +166,8 @@ const GF = (() => {
     }
   }
   // flat face between tile rectangle and a ring, at z
-  function rectAnnulus(m, tile, rg, z, up) {
+  // F: Verbindungen je Seite (nur Unterseite): Die Kante bekommt die Punkte von Zapfenwurzel bzw. Tasche
+  function rectAnnulus(m, tile, rg, z, up, F) {
     if (rg.loop) return zipLoops(m, outline(tile).map((p) => [p.x, p.y, z]), rg, rg.c, !up);
     const C = corners(tile).map(p => [p[0], p[1], z]);
     for (let c = 0; c < 4; c++) {
@@ -162,7 +177,14 @@ const GF = (() => {
       const degenerate = Math.abs(p[0] - C[c][0]) < 1e-9 && Math.abs(p[1] - C[c][1]) < 1e-9 ||
         (Math.abs((q[0] - p[0]) * (C[n][1] - C[c][1]) - (q[1] - p[1]) * (C[n][0] - C[c][0])) < 1e-9 &&
           Math.abs((p[0] - C[c][0]) * (C[n][1] - C[c][1]) - (p[1] - C[c][1]) * (C[n][0] - C[c][0])) < 1e-9);
-      if (!degenerate) up ? m.quad(C[c], C[n], q, p) : m.quad(C[c], p, q, C[n]);
+      const f = F && F[c];
+      if (f) {
+        const n1 = z3(f.n1, z), n2 = z3(f.n2, z), h1 = z3(f.h1, z), h2 = z3(f.h2, z);
+        const T = f.kind === 2
+          ? [[C[c], n1, h1], [C[c], h1, p], [h1, h2, q], [h1, q, p], [h2, C[n], q], [h2, n2, C[n]]] // Tasche: Kerbe ausgespart
+          : [[C[c], n1, p], [n1, q, p], [n1, n2, q], [n2, C[n], q]];                                  // Zapfen: nur Punkte an der Wurzel
+        for (const [a, b, d] of T) up ? m.tri(a, b, d) : m.tri(a, d, b);
+      } else if (!degenerate) up ? m.quad(C[c], C[n], q, p) : m.quad(C[c], p, q, C[n]);
     }
   }
   // flat face between two rings (outer O, inner I) at same z
@@ -216,7 +238,8 @@ const GF = (() => {
     return out;
   }
   // vertical boundary walls between levels zb (knifeB) and zt (knifeT)
-  function walls(m, tile, zb, zt, kb, kt) {
+  // open: je Seite eine Öffnung unten in der Wand (Zapfenwurzel oder Taschenöffnung)
+  function walls(m, tile, zb, zt, kb, kt, open) {
     const O = outline(tile);
     if (O) {
       O.forEach((p, i) => { if (!p.b) return; const q = O[(i + 1) % O.length]; m.quad([p.x, p.y, zb], [q.x, q.y, zb], [q.x, q.y, zt], [p.x, p.y, zt]); });
@@ -226,6 +249,13 @@ const GF = (() => {
     for (let i = 0; i < sb.length; i++) {
       if (!sb[i].boundary) continue;
       const B = sb[i].pts, T = st[i].pts;
+      if (open && open[i]) {
+        const f = open[i], zh = zb + f.h, a = B[0], b = B[B.length - 1];
+        m.quad(z3(a, zb), z3(f.n1, zb), z3(f.n1, zh), z3(a, zt));
+        m.quad(z3(f.n1, zh), z3(f.n2, zh), z3(b, zt), z3(a, zt));
+        m.quad(z3(f.n2, zb), z3(b, zb), z3(b, zt), z3(f.n2, zh));
+        continue;
+      }
       if (sb[i].arc) {
         for (let k = 0; k < B.length - 1; k++) m.quad(z3(B[k], zb), z3(B[k + 1], zb), z3(T[k + 1], zt), z3(T[k], zt));
       } else {
@@ -242,16 +272,70 @@ const GF = (() => {
     return tile.nbPocket.slice();
   }
 
+  // ---------- Verbindungen ----------
+  const connGeo = (fit) => {
+    const a = CONN.flank * Math.PI / 180, f = fit ?? CONN.fit;
+    return { tan: Math.tan(a), wn: CONN.neck / 2 - f / Math.cos(a), D: CONN.depth + f };
+  };
+  // Verbindungen einer Zelle je Seite: null oder {kind 1 Zapfen / 2 Tasche, h, n1, n2 (an der Kante), h1, h2 (Kopf)}
+  function tileFeat(t) {
+    if (!t.pocket || isClipped(t) || !t.feat || !t.feat.some(Boolean)) return null;
+    const C = corners(t), g = connGeo(t.fit);
+    return t.feat.map((kind, s) => {
+      if (!kind) return null;
+      const a = C[s], b = C[(s + 1) % 4], L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      const P = (u, v) => [a[0] + u * ux - v * uy, a[1] + u * uy + v * ux]; // u längs der Kante, v nach innen
+      const uc = L / 2;
+      if (kind === 2) { const hn = CONN.neck / 2, e = g.D * g.tan; return { kind, h: CONN.pocketH, n1: P(uc - hn, 0), n2: P(uc + hn, 0), h1: P(uc - hn - e, g.D), h2: P(uc + hn + e, g.D) }; }
+      const e = CONN.depth * g.tan;
+      return { kind, h: CONN.height, n1: P(uc - g.wn, 0), n2: P(uc + g.wn, 0), h1: P(uc - g.wn - e, -CONN.depth), h2: P(uc + g.wn + e, -CONN.depth) };
+    });
+  }
+  // Tasche: von unten offen, Decke auf pocketH (kurze Brücke beim Druck), Wände senkrecht
+  function addSocket(m, f, z0) {
+    const zh = z0 + f.h, P = [f.n1, f.h1, f.h2, f.n2];
+    for (let i = 0; i < 3; i++) m.quad(z3(P[i], z0), z3(P[i + 1], z0), z3(P[i + 1], zh), z3(P[i], zh));
+    m.quad(z3(f.n1, zh), z3(f.h1, zh), z3(f.h2, zh), z3(f.n2, zh));
+  }
+  // Zapfen. mode: 'full' liegt auf dem Druckbett; 'bottom' = Unterseite steigt unter 45° aus der Plattenwand
+  // (Platte höher im Stapel), 'top' = Oberseite fällt unter 45° (Platte wird kopfüber gedruckt) -> druckt ohne Stützen
+  function addTab(m, f, z0, mode) {
+    const zr = z0 + f.h, zb = mode === 'bottom' ? z0 + CONN.depth : z0, zt = mode === 'top' ? zr - CONN.depth : zr;
+    const r1b = z3(f.n1, z0), r2b = z3(f.n2, z0), r1t = z3(f.n1, zr), r2t = z3(f.n2, zr);
+    const t1b = z3(f.h1, zb), t2b = z3(f.h2, zb), t1t = z3(f.h1, zt), t2t = z3(f.h2, zt);
+    m.quad(r1t, t1t, t2t, r2t); m.quad(r2b, t2b, t1b, r1b);
+    m.quad(r1b, t1b, t1t, r1t); m.quad(t1b, t2b, t2t, t1t); m.quad(t2b, r2b, r2t, t2t);
+  }
+  // Brücke (Doppel-Schwalbenschwanz) um (cx, cy), Hals längs x, liegt flach auf dem Bett
+  function addBridge(m, cx, cy, fit) {
+    const g = connGeo(fit), d = CONN.depth, wh = g.wn + d * g.tan, h = CONN.height;
+    const O = [[-wh, -d], [wh, -d], [g.wn, 0], [wh, d], [-wh, d], [-g.wn, 0]].map(([x, y]) => [cx + x, cy + y]);
+    const q = (i, z) => z3(O[i], z);
+    m.quad(q(0, h), q(1, h), q(2, h), q(5, h)); m.quad(q(5, h), q(2, h), q(3, h), q(4, h));
+    m.quad(q(5, 0), q(2, 0), q(1, 0), q(0, 0)); m.quad(q(4, 0), q(3, 0), q(2, 0), q(5, 0));
+    for (let i = 0; i < 6; i++) { const j = (i + 1) % 6; m.quad(q(i, 0), q(j, 0), q(j, h), q(i, h)); }
+  }
+  const bridgeSize = (fit) => { const g = connGeo(fit); return [2 * (g.wn + CONN.depth * g.tan), 2 * CONN.depth]; };
+  function bridgeMesh(fit) { const m = new Mesh(), [w, d] = bridgeSize(fit); addBridge(m, w / 2, d / 2, fit); return m; }
+  // Zapfen ragen über die Platte hinaus: so viel bleibt ringsum auf dem Druckbett frei
+  const connPad = (o) => (o.connect === 'tabs' ? CONN.depth : 0);
+
   // ---------- bodies ----------
-  function addPlate(m, tiles, z0, hs) {
+  function addPlate(m, tiles, z0, hs, tabMode) {
     const HS = hs || H;
     for (const t of tiles) {
       const kb = knifeFlags(t, false), kt = knifeFlags(t, true);
       if (t.pocket) {
         const rings = PROFILE.map(([z, ins], k) => ring(t, ins, z0 + z, k === PROFILE.length - 1 ? topEx(t) : null));
         for (let i = 0; i < rings.length - 1; i++) loft(m, rings[i], rings[i + 1], false);
-        rectAnnulus(m, t, rings[0], z0, false);
+        const F = tileFeat(t);
+        rectAnnulus(m, t, rings[0], z0, false, F);
         rectAnnulus(m, t, rings[rings.length - 1], z0 + H, true);
+        if (F) {
+          for (const f of F) if (f) f.kind === 2 ? addSocket(m, f, z0) : addTab(m, f, z0, tabMode || 'full');
+          walls(m, t, z0, z0 + H, kb, kt, F);
+          continue;
+        }
       } else {
         m.fan(tilePoly(t, kt, z0 + HS));
         m.fan(tilePoly(t, kb, z0).reverse());
@@ -368,7 +452,7 @@ const GF = (() => {
   function axisKey(a) { return a.mLow + '|' + a.cells.join(',') + '|' + a.mHigh; }
 
   // build tiles of a piece (local coords, origin at its min corner)
-  function pieceTiles(p, clips) {
+  function pieceTiles(p, clips, fit) {
     const cols = [], rows = [];
     const mk = (ax, out) => {
       let x = 0;
@@ -389,6 +473,11 @@ const GF = (() => {
       const nb = [grid[t.j - 1] && grid[t.j - 1][t.i], grid[t.j][t.i + 1], grid[t.j + 1] && grid[t.j + 1][t.i], grid[t.j][t.i - 1]]; // S,E,N,W
       t.boundary = nb.map(n => !n);
       t.nbPocket = nb.map(n => !!(n && n.pocket));
+      if (t.pocket && p.feat) { // Verbindungen an Stoßkanten (S, E, N, W)
+        const F = p.feat, li = cols.length - 1, lj = rows.length - 1;
+        t.feat = [t.j === 0 ? F[0][t.i] || 0 : 0, t.i === li ? F[1][t.j] || 0 : 0, t.j === lj ? F[2][t.i] || 0 : 0, t.i === 0 ? F[3][t.j] || 0 : 0];
+        t.fit = fit;
+      }
     }
     return clipTiles(tiles, clips);
   }
@@ -474,10 +563,38 @@ const GF = (() => {
       pieces.push({
         ax: gx, ay: gy, ix, iy: jy, x: ox + gx.offset, y: oy + gy.offset, w: gx.width, d: gy.width,
         outer: sep ? [false, false, false, false] : [jy === 0, ix === sx.length - 1, jy === sy.length - 1, ix === 0],
+        feat: [[], [], [], []],
         key: axisKey(gx) + '#' + axisKey(gy)
       });
     }));
     return pieces;
+  }
+
+  // Verbindungen festlegen: je Stoßseite und Zelle Zapfen (1) oder Tasche (2).
+  // 'tabs': Zapfen rechts und hinten, Taschen links und vorne. 'bridges': überall Taschen.
+  // Nur wo die eigene und die gegenüberliegende Zelle nicht von einer Wandrundung beschnitten sind.
+  function setConn(P0, nx, clips, o) {
+    const cm = o.connect === 'tabs' ? [2, 1, 1, 2] : o.connect === 'bridges' ? [2, 2, 2, 2] : null;
+    if (!cm) return;
+    const cut = (x0, y0, x1, y1) => clips.some((c) => clipCuts(c, x0, y0, x1, y1));
+    const spans = (ax) => { const out = []; let x = 0; if (ax.mLow > 0) { out.push(null); x += ax.mLow; } for (const w of ax.cells) { out.push([x, x + w]); x += w; } if (ax.mHigh > 0) out.push(null); return out; };
+    for (const p of P0) {
+      const cols = spans(p.ax), rows = spans(p.ay);
+      const nb = [P0[(p.iy - 1) * nx + p.ix], p.ix + 1 < nx ? P0[p.iy * nx + p.ix + 1] : null, P0[(p.iy + 1) * nx + p.ix], p.ix > 0 ? P0[p.iy * nx + p.ix - 1] : null];
+      for (let s = 0; s < 4; s++) {
+        const q = nb[s]; if (!q) continue;
+        const horiz = s === 0 || s === 2, low = s === 0 || s === 3, along = horiz ? cols : rows, own = horiz ? rows : cols;
+        const mine = own[low ? 0 : own.length - 1], qc = horiz ? q.ay.cells : q.ax.cells, theirs = low ? qc[qc.length - 1] : qc[0];
+        if (!mine) continue;
+        p.feat[s] = along.map((sp) => {
+          if (!sp) return 0;
+          let a, b; // eigene Zelle und Nachbarzelle in Raster-Koordinaten
+          if (horiz) { const y = low ? p.y : p.y + p.d; a = [p.x + sp[0], p.y + mine[0], p.x + sp[1], p.y + mine[1]]; b = low ? [a[0], y - theirs, a[2], y] : [a[0], y, a[2], y + theirs]; }
+          else { const x = low ? p.x : p.x + p.w; a = [p.x + mine[0], p.y + sp[0], p.x + mine[1], p.y + sp[1]]; b = low ? [x - theirs, a[1], x, a[3]] : [x, a[1], x + theirs, a[3]]; }
+          return cut(...a) || cut(...b) ? 0 : cm[s];
+        });
+      }
+    }
   }
 
   function compute(o) {
@@ -491,14 +608,16 @@ const GF = (() => {
     const gX = sep ? { ...AX, mLow: 0, mHigh: 0 } : AX, gY = sep ? { ...AY, mLow: 0, mHigh: 0 } : AY;
     const ox = sep ? AX.mLow : 0, oy = sep ? AY.mLow : 0;
     // Passt alles nebeneinander auf ein Druckbett, wird nicht gestapelt: ein Material, kein Prime-Tower
+    // Zapfen ragen über die Platten hinaus: Bett ringsum um den Überstand kleiner rechnen
+    const BX = o.bedX - 2 * connPad(o), BY = o.bedY - 2 * connPad(o);
     if (sep) {
       // mehrere Aufteilungen probieren: die erste, bei der auch die Leisten noch mit aufs Bett passen
-      for (const flat of flatSplit(gX, gY, o.bedX, o.bedY, nCopies(o), 8)) {
-        const r = finish(AX, AY, flat, ox, oy, sep, { ...o, stack: false }, o.bedX, o.bedY, flat.place);
+      for (const flat of flatSplit(gX, gY, BX, BY, nCopies(o), 8)) {
+        const r = finish(AX, AY, flat, ox, oy, sep, { ...o, stack: false }, BX, BY, flat.place);
         if (r.stacks.length === 1) return { ...r, flat: true };
       }
     }
-    const bx = o.bedX - (o.stack ? o.towerReserve : 0), by = o.bedY;
+    const bx = BX - (o.stack ? o.towerReserve : 0), by = BY;
     let best = null;
     if (o.stack && sep) best = stackSplit(gX, gY, bx, by, o);
     if (!best) for (const [lx, ly] of [[bx, by], [by, bx]]) {
@@ -515,33 +634,49 @@ const GF = (() => {
   function finish(AX, AY, best, ox, oy, sep, o, bx, by, flatPlace) {
     const totalW0 = AX.cells.reduce((a, b) => a + b, 0) + AX.mLow + AX.mHigh, totalD0 = AY.cells.reduce((a, b) => a + b, 0) + AY.mLow + AY.mHigh;
     const clips = wallClips(AX, AY, totalW0, totalD0, o);
-    const pieces = copiesOf(makePieces(best.sx, best.sy, ox, oy, sep).map((p) => ({ ...p, clips: localClips(clips, p.x, p.y, p.x + p.w, p.y + p.d) })), nCopies(o));
+    const P0 = makePieces(best.sx, best.sy, ox, oy, sep).map((p) => ({ ...p, clips: localClips(clips, p.x, p.y, p.x + p.w, p.y + p.d) }));
+    setConn(P0, best.sx.length, clips, o);
+    const pieces = copiesOf(P0, nCopies(o));
     // identical piece types
     const types = new Map();
     for (const p of pieces) {
-      const k = p.key + '#' + p.outer.join('') + '#' + clipKey(p.clips);
+      const k = p.key + '#' + p.outer.join('') + '#' + clipKey(p.clips) + '#' + p.feat.map((a) => a.join('')).join('|');
       if (!types.has(k)) types.set(k, { label: String.fromCharCode(65 + types.size), pieces: [], rep: p });
       types.get(k).pieces.push(p);
       p.type = types.get(k);
     }
-    for (const t of types.values()) t.tiles = pieceTiles(t.rep, t.rep.clips);
+    for (const t of types.values()) t.tiles = pieceTiles(t.rep, t.rep.clips, o.connFit);
+    // Brücken: eine je Taschenpaar, als Reihen aufs Druckbett
+    const bridges = { count: 0, list: [], types: [] };
+    if (o.connect === 'bridges') {
+      const fit = o.connFit ?? CONN.fit, [bw, bd] = bridgeSize(fit);
+      for (const p of pieces) for (const a of p.feat) for (const k of a) if (k === 2) bridges.count += 0.5;
+      bridges.count = Math.round(bridges.count);
+      for (let left = bridges.count ? bridges.count + CONN.spare : 0; left > 0; left -= CONN.blockN) {
+        const n = Math.min(CONN.blockN, left), w = n * bw + (n - 1) * CONN.blockGap;
+        let t = bridges.types.find((q) => q.n === n);
+        if (!t) { t = { bridge: true, label: 'B' + (bridges.types.length + 1), n, w, d: bd, h: CONN.height, fit, bw, items: [], tiles: [] }; bridges.types.push(t); }
+        const b = { x0: 0, y0: 0, x1: w, y1: bd, type: t, bridge: true }; t.items.push(b); bridges.list.push(b);
+      }
+      bridges.total = bridges.count + CONN.spare; bridges.size = [bw, bd, CONN.height];
+    }
     const stacks = flatPlace
-      ? [{ label: 'J1', flat: true, bedRot: Math.abs(flatPlace.W - o.bedX) > 1e-6, bed: { w: flatPlace.W, d: flatPlace.D }, foot: { w: flatPlace.fw, d: flatPlace.fd },
+      ? [{ label: 'J1', flat: true, bedRot: Math.abs(flatPlace.W - bx) > 1e-6, bed: { w: flatPlace.W, d: flatPlace.D }, foot: { w: flatPlace.fw, d: flatPlace.fd },
           items: flatPlace.items.map((q) => ({ p: pieces[q.i], rot: q.rot, flip: 0, lv: 0, dx: q.x, dy: q.y })) }]
       : o.stack ? buildStacks(pieces, o) : pieces.map((p, i) => ({ items: [{ p, dx: 0, dy: 0 }], label: 'J' + (i + 1) }));
     // spacers: try full-length strips first, split them shorter until they fit next to the plates
-    let spacers = { list: [], types: [] }, jobs = packSpacers(stacks.slice(), spacers, bx, by, o);
+    let spacers = { list: [], types: [] }, jobs = packSpacers(stacks.slice(), spacers, bx, by, o, bridges);
     if (sep) {
       const L0 = Math.max(bx, by), best = { n: Infinity };
       for (const f of [1, 0.75, 0.6, 0.5, 0.4, 0.34, 0.25]) {
-        const sp = buildSpacers(AX, AY, totalW0, totalD0, L0 * f, o, clips), jb = packSpacers(stacks.map(st => ({ ...st })), sp, bx, by, o);
+        const sp = buildSpacers(AX, AY, totalW0, totalD0, L0 * f, o, clips), jb = packSpacers(stacks.map(st => ({ ...st })), sp, bx, by, o, bridges);
         const extra = jb.length - stacks.length;
         if (extra < best.n) { best.n = extra; best.sp = sp; best.jb = jb; }
         if (extra === 0) break;
       }
       spacers = best.sp; jobs = best.jb;
     }
-    return { AX, AY, pieces, types: [...types.values()], stacks: jobs, spacers, totalW: AX.cells.reduce((a, b) => a + b, 0) + AX.mLow + AX.mHigh, totalD: AY.cells.reduce((a, b) => a + b, 0) + AY.mLow + AY.mHigh };
+    return { AX, AY, pieces, types: [...types.values()], stacks: jobs, spacers, bridges, totalW: AX.cells.reduce((a, b) => a + b, 0) + AX.mLow + AX.mHigh, totalD: AY.cells.reduce((a, b) => a + b, 0) + AY.mLow + AY.mHigh };
   }
 
   // Zerlegungsvorschläge einer Achse in Gruppen <= L
@@ -690,7 +825,11 @@ const GF = (() => {
     }
     return { list, types: [...types.values()] };
   }
-  function spacerMesh(type) { const m = new Mesh(); addPlate(m, type.tiles, 0, type.h); return m; }
+  function spacerMesh(type) {
+    const m = new Mesh();
+    if (type.bridge) { for (let i = 0; i < type.n; i++) addBridge(m, type.bw / 2 + i * (type.bw + CONN.blockGap), type.d / 2, type.fit); return m; }
+    addPlate(m, type.tiles, 0, type.h); return m;
+  }
   // can piece B sit on piece A? returns {dx,dy} offset or null
   function axisFit(b, a) {
     let off;
@@ -754,10 +893,10 @@ const GF = (() => {
   }
 
   // put spacer strips into the free area of the plate beds; leftovers get their own bed(s)
-  function packSpacers(stacks, spacers, BX, BY, o) {
+  function packSpacers(stacks, spacers, BX, BY, o, bridges) {
     const g = 3;
     stacks.forEach(st => {
-      st.spacers = [];
+      st.spacers = []; st.bridges = [];
       let w, d, bx, by;
       if (st.flat) { w = st.foot.w; d = st.foot.d; bx = st.bed.w; by = st.bed.d; }
       else {
@@ -784,7 +923,7 @@ const GF = (() => {
         const x = alongY ? r.x + lane.off : r.x + a, y = alongY ? r.y + a : r.y + lane.off;
         tw.forEach((q, level) => {
           const longX = (q.x1 - q.x0) >= (q.y1 - q.y0), rot = longX !== !alongY;
-          st.spacers.push({ sp: q, x, y, rot, level });
+          st[tw.key || 'spacers'].push({ sp: q, x, y, rot, level });
         });
         return true;
       }
@@ -801,16 +940,18 @@ const GF = (() => {
     }
     for (const arr of groups.values()) for (let i = 0; i < arr.length; i += maxT) towers.push(arr.slice(i, i + maxT));
     const order = towers.sort((a, b) => Math.max(b[0].x1 - b[0].x0, b[0].y1 - b[0].y0) - Math.max(a[0].x1 - a[0].x0, a[0].y1 - a[0].y0));
+    // Brücken-Reihen: flach, nie gestapelt, nach den Leisten
+    for (const b of (bridges ? bridges.list : [])) { const tw = [b]; tw.key = 'bridges'; order.push(tw); }
     const left = [];
     for (const tw of order) { if (!stacks.some(st => fit(st, tw))) left.push(tw); }
     while (left.length) { // own beds for what did not fit
-      const st = { items: [], spacers: [], bed: { w: BX, d: BY }, regions: [{ x: 0, y: 0, W: BX, H: BY, lanes: [] }], label: 'L' };
+      const st = { items: [], spacers: [], bridges: [], bed: { w: BX, d: BY }, regions: [{ x: 0, y: 0, W: BX, H: BY, lanes: [] }], label: 'L' };
       const rest = left.filter(tw => !fit(st, tw));
       if (rest.length === left.length) break; // cannot place (should not happen)
       stacks.push(st); left.splice(0, left.length, ...rest);
     }
     let n = 0; stacks.forEach(st => { if (!st.items.length) st.label = 'L' + (++n); });
-    for (const st of stacks) for (const e of st.spacers) e.sp.job = st;
+    for (const st of stacks) for (const e of st.spacers.concat(st.bridges)) e.sp.job = st;
     return stacks;
   }
   // append mesh src into dst, rotated 90deg (ccw) if rot, then moved to (tx,ty). src occupies [0,w]x[0,d]
@@ -823,7 +964,7 @@ const GF = (() => {
   function rotTiles(tiles, d) {
     const rs = (a) => [a[3], a[0], a[1], a[2]]; // Seiten S,E,N,W
     return tiles.map((t) => {
-      return { ...t, x0: d - t.y1, x1: d - t.y0, y0: t.x0, y1: t.x1, boundary: rs(t.boundary), nbPocket: rs(t.nbPocket), rounds: {},
+      return { ...t, x0: d - t.y1, x1: d - t.y0, y0: t.x0, y1: t.x1, boundary: rs(t.boundary), nbPocket: rs(t.nbPocket), rounds: {}, feat: t.feat && rs(t.feat),
         clips: (t.clips || []).map((c) => ({ ...c, cx: d - c.cy, cy: c.cx, q: (c.q + 1) % 4 })) };
     });
   }
@@ -833,14 +974,14 @@ const GF = (() => {
       const base = it.rot ? rotTiles(it.p.type.tiles, it.p.d) : it.p.type.tiles;
       const lvk = it.lv ?? k;
       if (it.flip) { // PETG-Wendeplatte: Platte bauen und kopfüber an ihren Platz legen (180° um x, echte Drehung)
-        const tmp = new Mesh(); addPlate(tmp, base, 0);
+        const tmp = new Mesh(); addPlate(tmp, base, 0, undefined, 'top');
         const dd = it.rot ? it.p.w : it.p.d, z0 = lvk * per, V = tmp.v, F = tmp.f;
         const P = (i) => [V[3 * i] + it.dx, dd - V[3 * i + 1] + it.dy, z0 + H - V[3 * i + 2]];
         for (let q = 0; q < F.length; q += 3) petg.tri(P(F[q]), P(F[q + 1]), P(F[q + 2]));
         return;
       }
       const tiles = base.map((t) => moveTile(t, it.dx, it.dy));
-      addPlate(pla, tiles, lvk * per);
+      addPlate(pla, tiles, lvk * per, undefined, lvk > 0 ? 'bottom' : 'full');
       if (lvk > 0 && o.sepStyle !== 'flip') {
         if (o.sepStyle === 'sheet') { // one continuous PETG foil over the whole footprint of the upper plate
           const sheet = tiles.map(t => ({ ...t, pocket: false, nbPocket: [false, false, false, false] }));
@@ -861,6 +1002,10 @@ const GF = (() => {
         merge(petg, t._sep, e.x, e.y, e.rot, t.d, lv * perS - o.sepT);
       }
       hs = Math.max(hs, lv * perS + sh);
+    }
+    for (const e of (stack.bridges || [])) {
+      const t = e.sp.type; if (!t._mesh) t._mesh = spacerMesh(t);
+      merge(pla, t._mesh, e.x, e.y, e.rot, t.d, 0); hs = Math.max(hs, t.h);
     }
     const nl = stack.items.reduce((a, it, k) => Math.max(a, (it.lv ?? k) + 1), 0);
     const hp = nl ? nl * H + (nl - 1) * gap : 0;
@@ -916,7 +1061,8 @@ const GF = (() => {
     const gap = sepGap(o), per = H + gap, flip = flipMode(o);
     let pla = 0, petg = 0;
     stack.items.forEach((it, k) => {
-      const t = it.p.type, lvk = it.lv ?? k, pv = vol(t, 'plate', () => plateMesh(t));
+      const t = it.p.type, lvk = it.lv ?? k, tm = it.flip ? 'top' : lvk > 0 ? 'bottom' : 'full';
+      const pv = vol(t, 'plate:' + tm, () => { const m = new Mesh(); addPlate(m, t.tiles, 0, undefined, tm); return m; });
       if (it.flip) { petg += pv; return; }
       pla += pv;
       if (lvk > 0 && o.sepStyle !== 'flip') {
@@ -937,6 +1083,7 @@ const GF = (() => {
       if (lv > 0 && !flip) petg += vol(t, 'spsep:' + o.sepT, () => { const m = new Mesh(); addPlate(m, t.tiles, 0, o.sepT); return m; });
       hs = Math.max(hs, lv * perS + sh);
     }
+    for (const e of (stack.bridges || [])) { const t = e.sp.type; pla += vol(t, 'bridge', () => spacerMesh(t)); hs = Math.max(hs, t.h); }
     const nl = stack.items.reduce((a, it, k) => Math.max(a, (it.lv ?? k) + 1), 0);
     return { pla, petg, height: Math.max(nl ? nl * H + (nl - 1) * gap : 0, hs) };
   }
@@ -1052,7 +1199,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, wallClips, clipPoly, outline, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;
