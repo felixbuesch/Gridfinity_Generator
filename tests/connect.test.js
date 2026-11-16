@@ -229,7 +229,7 @@ describe('Brücken: Extrateile', () => {
     }
     expect(n).toBeGreaterThan(0);
   });
-  it('Brücken sind flach (2,3 mm) und brauchen keine Stützen', () => {
+  it('Brücken sind flach (2,2 mm) und brauchen keine Stützen', () => {
     const m = GF.bridgeMesh(0.15); let zmax = -Infinity;
     for (let i = 2; i < m.v.length; i += 3) zmax = Math.max(zmax, m.v[i]);
     expect(zmax).toBeCloseTo(C.height, 9);

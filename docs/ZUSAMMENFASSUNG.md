@@ -179,3 +179,20 @@ Antworte auf Deutsch.
 - Browser-Zurück: Profi schließen → Auswahl aufheben → Schritt zurück → Startbildschirm.
 - Tastatur: Profi-Schublade `inert` wenn zu, Esc schließt, Fokus wandert mit; Teileliste-Einträge wählen Teile; reduzierte Bewegung respektiert.
 - LIESMICH: flach/gestapelt richtig, Dezimalkomma, Exemplar-Nummern, halbe Zellen als ½; Dateinamen mit Projekt und lesbaren Maßen.
+
+## Eckradius, Verbindungen, Perforation, Drucker (November)
+
+- **Eckradius:** Die Wandrundung minus halbes Spiel ist ein Kreis um den Mittelpunkt der Wandrundung. Jede Kachel
+  (Zelle, Rand, Leistenstück) wird damit geschnitten (`wallClips`, `clipPoly`). Taschen folgen der Rundung,
+  Leiter-Leisten sind dort massiv, Zellen mit weniger als 150 mm² Taschenboden werden massiv. Tests: `tests/corners.test.js`.
+- **Verbindungen** (`connect`: keine / Zapfen / Brücken, Maße in `CONN`): Schwalbenschwanz mittig je Zelle an jeder
+  Stoßkante, 1,2 mm tief, 2,2 mm hoch, Tasche 2,4 mm hoch. Zapfen rechts und hinten, Taschen links und vorne.
+  Im Stapel bekommen Zapfen eine 45°-Schräge. Brücken sind Extrateile und liegen mit auf dem Druckbett.
+  Spiel `connFit`, Standard 0,15 mm je Flanke. Tests: `tests/connect.test.js`.
+- **Perforation** (`sepStyle: 'perf'`, Maße in `PERF`): siehe `docs/PERFORATION.md`. Tests: `tests/perf.test.js`.
+- **Drucker** (`printer`, Liste `PRINTERS`): Profil setzt die Bettmaße, Export liegt mittig auf der Druckfläche.
+  Die 3MF stellt den Drucker in Bambu Studio nicht um (dafür wären vollständige Projekteinstellungen nötig,
+  die sich ohne Bambu Studio nicht prüfen lassen). Tests: `tests/printer.test.js`.
+- **Prüfung vor dem Testdruck:** `tests/preflight.test.js` (Schichtraster 0,2 mm, PLA/PETG ohne Durchdringung,
+  keine frei hängenden Ecken im Stapel, 3MF-Inhalt).
+- Testdateien: `node scripts/testperf.js`, `node scripts/testconnect.js` schreiben nach `testdruck/`.

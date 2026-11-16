@@ -14,12 +14,13 @@ const GF = (() => {
   // Verbindungen zwischen Grundplatten: Schwalbenschwanz an der Unterseite, mittig je Zelle an jeder Stoßkante.
   // Der Rand einer Zelle ist unten 2,85 mm und von 0,7 bis 2,5 mm Höhe 2,15 mm massiv, darüber wird er schmaler.
   // Die Tasche bleibt deshalb unter 2,5 mm Höhe und 1,35 mm tief: dahinter bleiben 0,8 mm Wand, oben bleibt alles unberührt.
+  // Alle Höhen sind Vielfache von 0,2 mm, damit sie genau auf Schichtgrenzen liegen.
   const CONN = {
     depth: 1.2,    // mm: so weit ragt ein Zapfen über die Stoßkante (Brücke: je Seite)
     neck: 6,       // mm: Breite an der Stoßkante
     flank: 45,     // Grad: Hinterschnitt der Flanken; Kopf = neck + 2 · depth · tan(flank)
-    height: 2.3,   // mm: Höhe von Zapfen und Brücke ab Unterseite
-    pocketH: 2.5,  // mm: Höhe der Tasche (0,2 mm Luft über dem Zapfen = eine Schicht)
+    height: 2.2,   // mm: Höhe von Zapfen und Brücke ab Unterseite (11 Schichten)
+    pocketH: 2.4,  // mm: Höhe der Tasche (0,2 mm Luft über dem Zapfen = eine Schicht)
     fit: 0.15,     // mm: Spiel je Flanke und an der Zapfenspitze (Standard)
     blockN: 10,    // Brücken je Reihe auf dem Druckbett
     blockGap: 2,   // mm: Abstand der Brücken auf dem Druckbett
@@ -376,7 +377,8 @@ const GF = (() => {
     for (const t of tiles) {
       const kb = knifeFlags(t, wedge), kt = knifeFlags(t, false);
       if (t.pocket) {
-        if (wedge) {
+        // an einer Wandrundung folgt die Schräge der Platte keiner geraden Linie mehr: dort ohne Keil
+        if (wedge && !isClipped(t)) {
           // grows out of the 45deg chamfer of the plate below: starts as a line on the chamfer,
           // inner face rises at 45deg to the rib edge (inset T_BOT) of the next plate -> no overhang
           const ts = T_BOT / 2, zc = Z0 - (ts - TOP);
@@ -885,20 +887,53 @@ const GF = (() => {
   // xs/ys = Zellfolgen der liegenden Platte im Koordinatensystem der untersten Platte
   // flip: Platte kopfüber (180° um die x-Achse), dadurch kehrt sich ihre Zellfolge in y um.
   // Kopfüber liegen ihre Stegspitzen unten auf den Stegspitzen darunter, oben ist ihr flaches Bodengitter.
+  // erste und letzte mögliche Lage von b auf a
+  function seqFits(b, a) {
+    const out = [];
+    for (let i = 0; i + b.length <= a.length; i++) if (b.every((c, k) => a[i + k] === c)) out.push(a.slice(0, i).reduce((s, x) => s + x, 0));
+    return out.length > 2 ? [out[0], out[out.length - 1]] : out;
+  }
+  // Wandrundungen einer Platte so, wie sie im Stapel liegt
+  function itemClips(it) {
+    let C = it.p.clips || [];
+    if (it.rot) C = C.map((c) => ({ ...c, cx: it.p.d - c.cy, cy: c.cx, q: (c.q + 1) % 4 }));
+    if (it.flip) { const dd = it.rot ? it.p.w : it.p.d; C = C.map((c) => ({ ...c, cy: dd - c.cy, q: [3, 2, 1, 0][c.q] })); }
+    return moveClips(C, it.dx, it.dy);
+  }
+  // Wie viele beschnittene Ecken der unteren Platte lägen unter vollem Material der oberen? (dort hinge die obere frei)
+  function hang(it, top) {
+    const lo = itemClips(top); if (!lo.length) return 0;
+    const w = it.rot ? it.p.d : it.p.w, d = it.rot ? it.p.w : it.p.d, up = itemClips(it);
+    const same = (a, b) => a.q === b.q && Math.abs(a.cx - b.cx) < 1e-6 && Math.abs(a.cy - b.cy) < 1e-6 && Math.abs(a.r - b.r) < 1e-6;
+    return lo.filter((c) => clipCuts(c, it.dx, it.dy, it.dx + w, it.dy + d) && !up.some((u) => same(u, c))).length;
+  }
   function placeOn(p, top, flip = 0) {
+    let best = null;
     for (const rot of [0, 1]) {
       const xs = rot ? p.ay.cells.slice().reverse() : p.ax.cells, ys0 = rot ? p.ax.cells : p.ay.cells;
       const ys = flip ? ys0.slice().reverse() : ys0;
-      const fx = seqFit(xs, top.xs), fy = seqFit(ys, top.ys);
-      if (fx !== null && fy !== null) return { p, rot, flip, xs, ys, dx: top.dx + fx, dy: top.dy + fy };
+      if (!top.p.clips || !top.p.clips.length) { // ohne Wandrundung darunter: erste passende Lage (wie bisher)
+        const fx = seqFit(xs, top.xs), fy = seqFit(ys, top.ys);
+        if (fx !== null && fy !== null) return best || { p, rot, flip, xs, ys, dx: top.dx + fx, dy: top.dy + fy };
+        continue;
+      }
+      // sonst die Lage, bei der nichts über einer beschnittenen Ecke hängt
+      for (const fx of seqFits(xs, top.xs)) for (const fy of seqFits(ys, top.ys)) {
+        const it = { p, rot, flip, xs, ys, dx: top.dx + fx, dy: top.dy + fy }, h = hang(it, top);
+        if (!best || h < best.h) best = { ...it, h };
+      }
+      if (best && best.h === 0) break;
     }
-    return null;
+    if (best) delete best.h;
+    return best;
   }
   function buildStacks(pieces, o) {
     const per = H + sepGap(o);
     const maxN = Math.max(1, Math.min(o.maxStack, Math.floor((o.bedZ - H) / per) + 1));
     const margins = pieces.some((p) => p.ax.mLow || p.ax.mHigh || p.ay.mLow || p.ay.mHigh);
-    const sorted = pieces.slice().sort((p, q) => q.w * q.d - p.w * p.d || Math.max(q.w, q.d) - Math.max(p.w, p.d));
+    // gleich große Platten: die mit Wandrundung nach oben, damit keine volle Ecke über einer beschnittenen hängt
+    const nc = (p) => (p.clips ? p.clips.length : 0);
+    const sorted = pieces.slice().sort((p, q) => q.w * q.d - p.w * p.d || Math.max(q.w, q.d) - Math.max(p.w, p.d) || nc(p) - nc(q));
     const stacks = [];
     for (const p of sorted) {
       let best = null;

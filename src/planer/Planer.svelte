@@ -406,6 +406,7 @@
   .flat { margin: 0; font-size: 13.5px; color: #d9d0c5; background: rgba(242,166,90,.08); border: 1px solid rgba(242,166,90,.25); border-radius: 10px; padding: 10px 12px; }
   .row2, .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .f { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); min-width: 0; }
+  .f select { font: 500 14px var(--f-ui); color: var(--ink); background: #14100c; border: 1px solid var(--line); border-radius: 8px; padding: 9px; width: 100%; min-width: 0; }
   .f :global(input) { font: 500 15px var(--f-mono); color: var(--ink); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; width: 100%; min-width: 0; }
   .f :global(input:disabled) { opacity: .45; }
   .f :global(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 0; }
