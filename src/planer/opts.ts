@@ -1,12 +1,13 @@
 // Einstellungen des Planers: Grundwerte, Speichern im Browser, Texte für Hover-Hilfen.
 import { DEFAULTS } from '../intro.js';
+import GF from '../gf.js';
 
 export type Align = 'start' | 'center' | 'end';
 export interface Opts {
   boxW: number; boxD: number; clearance: number; cornerR: number; minSpacer: number; half: boolean;
   spacers: 'separate' | 'integrated'; spacerStyle: 'ladder' | 'solid'; alignX: Align; alignY: Align;
   spacerH: number; rail: number; ribPitch: number; bedX: number; bedY: number; bedZ: number;
-  connect: 'none' | 'tabs' | 'bridges'; connFit: number;
+  printer: string; connect: 'none' | 'tabs' | 'bridges'; connFit: number;
   copies: number; stack: boolean; sepStyle: 'grow' | 'ring' | 'wedge' | 'sheet' | 'flip' | 'perf'; perfGap: number; perfDot: number; perfPitch: number; sepT: number; overhang: number; maxStack: number; towerReserve: number;
 }
 
@@ -15,7 +16,12 @@ export const defaults = (): Opts => ({ ...(DEFAULTS as Opts) });
 const STORE = 'gf-planer-v7';
 export function loadOpts(): Opts {
   const o = defaults();
-  try { Object.assign(o, JSON.parse(localStorage.getItem(STORE) || '{}') || {}); } catch { /* ohne Speicher */ }
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE) || '{}') || {};
+    Object.assign(o, saved);
+    // ältere Speicherstände kennen noch keinen Drucker: aus den Bettmaßen ableiten, sonst „eigener Drucker“
+    if (!saved.printer && ('bedX' in saved || 'bedY' in saved || 'bedZ' in saved)) o.printer = GF.printerFor(o);
+  } catch { /* ohne Speicher */ }
   return o;
 }
 export function saveOpts(o: Opts) { try { localStorage.setItem(STORE, JSON.stringify(o)); } catch { /* egal */ } }
@@ -27,7 +33,7 @@ export const MAX_DIM = 2000; // mm je Richtung; größer wird mit Hinweis abgele
 export function clean(o: Opts) {
   const d = defaults(), r: Record<string, unknown> = { ...o };
   for (const k of Object.keys(d) as (keyof Opts)[]) if (typeof d[k] === 'number') r[k] = num(o[k], d[k] as number);
-  const c = r as unknown as Opts & { wedgeDepth: number };
+  const c = GF.applyPrinter(r) as unknown as Opts & { wedgeDepth: number };
   c.boxW = lim(c.boxW, 0, 100000); c.boxD = lim(c.boxD, 0, 100000);
   c.clearance = lim(c.clearance, 0, 20); c.cornerR = lim(c.cornerR, 0, 50); c.minSpacer = lim(c.minSpacer, 0, 42);
   c.bedX = lim(c.bedX, 50, 1000); c.bedY = lim(c.bedY, 50, 1000); c.bedZ = lim(c.bedZ, 10, 1000);
@@ -86,6 +92,7 @@ export const TIPS: Record<string, string> = {
   perfGap: 'Luftspalt zwischen zwei Platten. Muss ein Vielfaches der Schichthöhe sein: 0,4 mm sind zwei Schichten à 0,2 mm. Größer löst sich leichter, die Unterseite wird aber rauer.',
   perfDot: 'Durchmesser der Punkte. 0,8 mm sind zwei Bahnen einer 0,4-mm-Düse. Kleiner druckt der Slicer nicht sicher, größer hält fester.',
   perfPitch: 'Abstand der Punkte. Wird je Zelle auf einen gleichmäßigen Teiler gerundet. Kleiner stützt besser und hält fester, größer löst sich leichter.',
+  printer: 'Dein Drucker. Bestimmt die Bettgröße und damit, wie die Platten geteilt werden, ob gestapelt oder flach gedruckt wird und wie die Dateien auf dem Bett liegen. „Eigener Drucker“: Bettmaße selbst eintragen.',
   toIntro: 'Zurück zur Auswahl Schreibtisch, Schublade oder Box.',
   fit: 'Bei diesen Innenmaßen geht das Raster genau auf und es braucht keine Leisten: ↓ das nächstkleinere Maß, ↑ das nächstgrößere (eine Reihe mehr). Klick übernimmt das Maß.',
   copiesDesk: 'So oft wird das ganze Raster gedruckt, z. B. für mehrere gleiche Schreibtische. Alle Exemplare werden zusammen so dicht wie möglich aufs Bett gepackt.',

@@ -86,7 +86,9 @@ export function filesFor(P, key) {
     out.push([base + '_PLA.stl', GF.stl(pla, base + ' PLA')]);
     if (petg.f.length) out.push([base + '_PETG.stl', GF.stl(petg, base + ' PETG')]);
     // Bambu-Studio-Projekt: PLA-Teil auf Filament 1, PETG-Teil auf Filament 2
-    out.push([base + '.3mf', GF.threeMF([{ name: base + ' PLA', mesh: pla0, extruder: 1 }, ...(perf ? [{ name: base + ' Perforation (PLA)', mesh: perf, extruder: 1 }] : []), { name: base + (P.o.sepStyle === 'flip' ? ' PETG Wendeplatten' : ' PETG Trennschicht'), mesh: petg, extruder: 2 }], base)]);
+    // Lage in der Datei: mittig auf der Druckfläche des gewählten Druckers (bei zwei Materialien bleibt rechts Platz für den Prime-Tower)
+    const pr = GF.printerOf(P.o), place = { bed: GF.printArea(P.o, R.flat), meta: { 'GridfinityPlaner:Printer': pr.name, 'GridfinityPlaner:Bed': `${fnum(pr.bedX)}x${fnum(pr.bedY)}x${fnum(pr.bedZ)}` } };
+    out.push([base + '.3mf', GF.threeMF([{ name: base + ' PLA', mesh: pla0, extruder: 1 }, ...(perf ? [{ name: base + ' Perforation (PLA)', mesh: perf, extruder: 1 }] : []), { name: base + (P.o.sepStyle === 'flip' ? ' PETG Wendeplatten' : ' PETG Trennschicht'), mesh: petg, extruder: 2 }], base, place)]);
   }
   return out;
 }
@@ -105,6 +107,8 @@ export function readme(P, use) {
   L.push(`Abstandshalter links/rechts: ${mm(R.AX.mLow)} / ${mm(R.AX.mHigh)} mm, vorne/hinten: ${mm(R.AY.mLow)} / ${mm(R.AY.mHigh)} mm (${o.spacers === 'separate' ? 'separate Leisten, ' + (o.spacerStyle === 'solid' ? 'voll' : 'Leiter') + ', Höhe ' + mm(GF.spacerHeight(o)) + ' mm' : 'in Platten integriert'})`);
   if (o.connect === 'tabs') L.push(`Verbindung: Zapfen (Schwalbenschwanz) an der Unterseite der Stoßkanten, Spiel ${mm(o.connFit)} mm je Seite. Zapfen rechts und hinten, Taschen links und vorne. Platten von oben ineinander setzen.`);
   if (o.connect === 'bridges') L.push(`Verbindung: ${R.bridges.count} Brücken (${mm(R.bridges.size[0], 1)} × ${mm(R.bridges.size[1], 1)} × ${mm(R.bridges.size[2], 1)} mm) plus ${R.bridges.total - R.bridges.count} Reserve, Spiel ${mm(o.connFit)} mm je Seite. Brücken an den Stoßkanten auf den Boden legen und die Platten darauf drücken, oder von unten in die Taschen stecken.`);
+  const pr = GF.printerOf(o);
+  L.push(`Drucker: ${pr.name}. In Bambu Studio diesen Drucker auswählen, die Datei stellt ihn nicht selbst ein.`);
   L.push(`Druckbett: ${mm(o.bedX)} × ${mm(o.bedY)} × ${mm(o.bedZ)} mm${stacked ? ', Reserve Prime-Tower ' + mm(o.towerReserve) + ' mm' : ''}`, '');
   const ox = R.AX.gapLow, oy = R.AY.gapLow, one = R.pieces.filter((p) => !p.copy);
   L.push('Platten (Position = linke vordere Ecke, gemessen ab linker und vorderer Wand, mm):');
@@ -133,7 +137,7 @@ export function readme(P, use) {
     else L.push(`  Stapel mit PETG-Trennschicht ${mm(o.sepT)} mm, Form: ${({ sheet: 'durchgehende Folie', wedge: 'Netz mit 45°-Keil', ring: 'Netz unter den Stegen', grow: `wächst aus der Stegkante mit ${mm(o.overhang, 0)}° Überhang` })[o.sepStyle]}.`);
     L.push('  1. S*.3mf öffnen (PLA-Teil = Filament 1, PETG-Teil = Filament 2).',
       '     Ausweichweg: S*_PLA.stl und S*_PETG.stl zusammen importieren und "als ein Objekt mit mehreren Teilen" laden.',
-      '  2. Filament 1 = PLA, Filament 2 = PETG (X2D: PLA linke Düse, PETG rechte Düse).',
+      pr.nozzles > 1 ? '  2. Filament 1 = PLA auf die linke Düse, Filament 2 = PETG auf die rechte Düse.' : '  2. Filament 1 = PLA, Filament 2 = PETG (beide im AMS).',
       '  3. Stützen aus, Prime-Tower an, Schichthöhe 0,2 mm.', '  4. Nach dem Druck die Platten von oben abziehen' + (o.sepStyle === 'flip' ? ', PETG-Platten umdrehen.' : ', PETG-Reste abziehen.'));
   }
   return L.join('\r\n');

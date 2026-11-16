@@ -25,6 +25,23 @@ const GF = (() => {
     blockGap: 2,   // mm: Abstand der Brücken auf dem Druckbett
     spare: 2,      // Brücken zusätzlich als Reserve
   };
+  // Drucker: nutzbares Druckbett (mm) und Zahl der Düsen. Weitere Angaben (Preis, Geschwindigkeit ...) können
+  // später je Eintrag ergänzt werden; gerechnet wird überall nur mit bedX/bedY/bedZ aus den Einstellungen.
+  const PRINTERS = [
+    { id: 'x2d', name: 'Bambu Lab X2D (zwei Düsen)', bedX: 235, bedY: 256, bedZ: 256, nozzles: 2 },
+    { id: 'a1mini', name: 'Bambu Lab A1 mini', bedX: 180, bedY: 180, bedZ: 180, nozzles: 1 },
+    { id: 'a1', name: 'Bambu Lab A1', bedX: 256, bedY: 256, bedZ: 256, nozzles: 1 },
+    { id: 'p1s', name: 'Bambu Lab P1S / X1C', bedX: 256, bedY: 256, bedZ: 256, nozzles: 1 },
+  ];
+  const CUSTOM_PRINTER = { id: 'custom', name: 'Eigener Drucker', nozzles: 1 };
+  // gewählter Drucker mit den tatsächlich gerechneten Bettmaßen
+  const printerOf = (o) => { const p = PRINTERS.find((q) => q.id === o.printer) || CUSTOM_PRINTER; return { ...p, bedX: o.bedX, bedY: o.bedY, bedZ: o.bedZ }; };
+  // Bettmaße eines Profils in die Einstellungen übernehmen (eigener Drucker: Eingaben bleiben)
+  const applyPrinter = (o) => { const p = PRINTERS.find((q) => q.id === o.printer); return p ? { ...o, bedX: p.bedX, bedY: p.bedY, bedZ: p.bedZ } : { ...o, printer: 'custom' }; };
+  // Profil zu gegebenen Bettmaßen (für gespeicherte Einstellungen ohne Druckerangabe)
+  const printerFor = (o) => (PRINTERS.find((p) => p.bedX === o.bedX && p.bedY === o.bedY && p.bedZ === o.bedZ) || CUSTOM_PRINTER).id;
+  // Fläche, auf der ein Druckjob in der Datei liegt: bei zwei Materialien bleibt rechts der Streifen für den Prime-Tower frei
+  const printArea = (o, flat) => [o.bedX - (twoMaterials(o) && !flat ? o.towerReserve || 0 : 0), o.bedY];
   // Trennung aus demselben Material: Luftspalt + Punkte als Sollbruchstellen (Herleitung: docs/PERFORATION.md)
   const PERF = {
     gap: 0.4,     // mm: Z-Abstand zwischen zwei Platten = 2 Schichten à 0,2 mm
@@ -1225,13 +1242,15 @@ const GF = (() => {
     });
     const NS = 'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p"';
     const itemT = `1 0 0 0 1 0 0 0 1 ${num(tx)} ${num(ty)} ${num(z0)}`;
+    // opts.meta: zusätzliche Angaben (z. B. Drucker), als normale 3MF-Metadaten
+    const meta = Object.entries(opts.meta || {}).map(([k, v]) => ` <metadata name="${esc(k)}">${esc(v)}</metadata>\n`).join('');
     const model = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" ${NS}>
  <metadata name="Application">BambuStudio-02.00.00.00</metadata>
  <metadata name="BambuStudio:3mfVersion">1</metadata>
  <metadata name="Title">${esc(objName)}</metadata>
  <metadata name="Designer">Gridfinity Planer</metadata>
- <resources>
+${meta} <resources>
   <object id="${oid}" p:UUID="${uuid(oid, 0)}" type="model">
    <components>
 ${comps}   </components>
@@ -1311,7 +1330,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PRINTERS, printerOf, applyPrinter, printerFor, printArea, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;

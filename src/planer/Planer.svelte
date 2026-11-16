@@ -203,6 +203,19 @@
         {#if marg}<p class="hint">Rand: {marg}</p>{/if}
       {:else}
         <h2 bind:this={headEl} tabindex="-1">So wird gedruckt</h2>
+        <label class="f" data-tip={TIPS.printer}>Drucker
+          <select bind:value={o.printer}>
+            {#each GF.PRINTERS as p}<option value={p.id}>{p.name} · {p.bedX} × {p.bedY} × {p.bedZ} mm</option>{/each}
+            <option value="custom">Eigener Drucker</option>
+          </select>
+        </label>
+        {#if o.printer === 'custom'}
+          <div class="grid2">
+            {#each [['bedX', 'Bett X (mm)', 50, 1000], ['bedY', 'Bett Y (mm)', 50, 1000], ['bedZ', 'Höhe Z (mm)', 10, 1000]] as [k, l, mn, mx]}
+              <label class="f" data-tip={TIPS[k as string]}>{l}<NumIn bind:value={o[k as 'bedX']} min={mn as number} max={mx as number} /></label>
+            {/each}
+          </div>
+        {/if}
         <div class="copies" data-tip={isDesk ? TIPS.copiesDesk : TIPS.copies}>
           <span>{#if isDesk}Anzahl Raster{:else}Anzahl Einsätze <em>mit Rahmen</em>{/if}</span>
           <div class="stepper">
@@ -252,7 +265,7 @@
             {#if o.stack && !R.flat}
             <ol>
               <li>Die 3MF des Druckbetts öffnen. PLA-Teil = Filament 1, PETG-Teil = Filament 2. Ausweichweg: <code>…_PLA.stl</code> und <code>…_PETG.stl</code> zusammen importieren und „als ein Objekt mit mehreren Teilen“ laden.</li>
-              <li>X2D: PLA auf die linke Düse, PETG auf die rechte.</li>
+              <li>{GF.printerOf(o).nozzles > 1 ? 'PLA auf die linke Düse, PETG auf die rechte.' : 'Filament 1 = PLA, Filament 2 = PETG (beide im AMS).'}</li>
               <li>Stützen aus, die Trennschichten sind schon im Modell. Prime-Tower an, Schichthöhe 0,2 mm.</li>
               <li>Nach dem Druck den Stapel von oben nach unten auseinanderziehen.</li>
             </ol>
@@ -335,10 +348,11 @@
     <div class="grid2">
       {#each PROFI as [k, l, mn, mx]}
         {@const locked = k === 'spacerH' && o.stack && o.sepStyle === 'flip'}
-        <label class="f" data-tip={locked ? 'Bei Wendeplatte sind die Leisten so hoch wie eine Platte (4,4 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}<NumIn bind:value={o[k] as number} min={mn} max={mx} disabled={locked} /></label>
+        {@const bedLock = (k === 'bedX' || k === 'bedY' || k === 'bedZ') && o.printer !== 'custom'}
+        <label class="f" data-tip={bedLock ? 'Kommt vom gewählten Drucker. Für eigene Maße im Schritt „Drucken“ „Eigener Drucker“ wählen.' : locked ? 'Bei Wendeplatte sind die Leisten so hoch wie eine Platte (4,4 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}{#if bedLock}<NumIn value={P.o[k] as number} min={mn} max={mx} disabled />{:else}<NumIn bind:value={o[k] as number} min={mn} max={mx} disabled={locked} />{/if}</label>
       {/each}
     </div>
-    <p class="hint">Werte außerhalb der Grenzen werden beim Rechnen auf den nächsten gültigen Wert gesetzt. Bambu Lab X2D im Zwei-Düsen-Druck: 235 × 256 × 256 mm.</p>
+    <p class="hint">Werte außerhalb der Grenzen werden beim Rechnen auf den nächsten gültigen Wert gesetzt. Die Bettmaße kommen vom gewählten Drucker (Schritt „Drucken“).</p>
   </aside>
 </div>
 
