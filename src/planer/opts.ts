@@ -7,7 +7,7 @@ export interface Opts {
   spacers: 'separate' | 'integrated'; spacerStyle: 'ladder' | 'solid'; alignX: Align; alignY: Align;
   spacerH: number; rail: number; ribPitch: number; bedX: number; bedY: number; bedZ: number;
   connect: 'none' | 'tabs' | 'bridges'; connFit: number;
-  copies: number; stack: boolean; sepStyle: 'grow' | 'ring' | 'wedge' | 'sheet' | 'flip'; sepT: number; overhang: number; maxStack: number; towerReserve: number;
+  copies: number; stack: boolean; sepStyle: 'grow' | 'ring' | 'wedge' | 'sheet' | 'flip' | 'perf'; perfGap: number; perfDot: number; perfPitch: number; sepT: number; overhang: number; maxStack: number; towerReserve: number;
 }
 
 export const defaults = (): Opts => ({ ...(DEFAULTS as Opts) });
@@ -37,6 +37,7 @@ export function clean(o: Opts) {
   c.sepT = lim(c.sepT, 0.1, 5); c.overhang = lim(c.overhang, 20, 70);
   c.spacerH = lim(c.spacerH, 0.6, 4.4); // höher als die Platte stört die Boxen
   c.connFit = lim(c.connFit, 0, 0.5);
+  c.perfGap = lim(c.perfGap, 0.1, 1.2); c.perfDot = lim(c.perfDot, 0.4, 3); c.perfPitch = lim(c.perfPitch, 2, 30);
   if (!['none', 'tabs', 'bridges'].includes(c.connect)) c.connect = 'none';
   c.rail = lim(c.rail, 0.8, 20); c.ribPitch = lim(c.ribPitch, 8, 500);
   c.wedgeDepth = c.sepStyle === 'wedge' ? 1 : 0;
@@ -81,6 +82,10 @@ export const TIPS: Record<string, string> = {
   towerReserve: 'Platz, der auf dem Bett für den Prime-Tower frei bleibt. Er wird beim Wechsel PLA/PETG gebraucht.',
   connect: 'Hält die einzelnen Grundplatten an der Unterseite zusammen. Zapfen: Schwalbenschwanz direkt an der Platte, greift in die Nachbarplatte. Brücken: kleine Extrateile, die von unten in Taschen beider Platten gesteckt werden; die Platten selbst bleiben ohne Überstand. Oberseite und Außenrand bleiben gleich.',
   connFit: 'Luft zwischen Zapfen bzw. Brücke und Tasche je Seite. 0,15 mm sitzt bei 0,4-mm-Düse stramm, lässt sich aber noch von Hand fügen. Klemmt es: größer. Wackelt es: kleiner.',
+  perf: 'Ein Material, Perforation: alles aus PLA, kein PETG, kein Prime-Tower. Die Platten liegen abwechselnd kopfüber mit einem kleinen Luftspalt. Dazwischen stehen nur Punkte als Sollbruchstellen, an denen man die Platten einzeln abzieht. Noch nicht am Drucker erprobt: zuerst die Testdatei drucken.',
+  perfGap: 'Luftspalt zwischen zwei Platten. Muss ein Vielfaches der Schichthöhe sein: 0,4 mm sind zwei Schichten à 0,2 mm. Größer löst sich leichter, die Unterseite wird aber rauer.',
+  perfDot: 'Durchmesser der Punkte. 0,8 mm sind zwei Bahnen einer 0,4-mm-Düse. Kleiner druckt der Slicer nicht sicher, größer hält fester.',
+  perfPitch: 'Abstand der Punkte. Wird je Zelle auf einen gleichmäßigen Teiler gerundet. Kleiner stützt besser und hält fester, größer löst sich leichter.',
   toIntro: 'Zurück zur Auswahl Schreibtisch, Schublade oder Box.',
   fit: 'Bei diesen Innenmaßen geht das Raster genau auf und es braucht keine Leisten: ↓ das nächstkleinere Maß, ↑ das nächstgrößere (eine Reihe mehr). Klick übernimmt das Maß.',
   copiesDesk: 'So oft wird das ganze Raster gedruckt, z. B. für mehrere gleiche Schreibtische. Alle Exemplare werden zusammen so dicht wie möglich aufs Bett gepackt.',

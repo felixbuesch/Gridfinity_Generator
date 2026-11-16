@@ -25,6 +25,15 @@ const GF = (() => {
     blockGap: 2,   // mm: Abstand der Brücken auf dem Druckbett
     spare: 2,      // Brücken zusätzlich als Reserve
   };
+  // Trennung aus demselben Material: Luftspalt + Punkte als Sollbruchstellen (Herleitung: docs/PERFORATION.md)
+  const PERF = {
+    gap: 0.4,     // mm: Z-Abstand zwischen zwei Platten = 2 Schichten à 0,2 mm
+    dot: 0.8,     // mm: Punktdurchmesser = 2 Bahnen einer 0,4-mm-Düse
+    pitch: 6,     // mm: Punktabstand (42 mm ÷ 7)
+    edge: 0.6,    // mm: Abstand der Punktreihen von den Kanten des Plattenfußes (unter den äußeren Bahnen)
+    seg: 6,       // Ecken eines Punkts
+    margin: 0.3,  // mm: so weit bleibt ein Punktrand von Wandrundungen und Verbindungstaschen weg
+  };
   const MIN_POCKET = 150;  // mm²: bleibt vom Taschenboden einer beschnittenen Zelle weniger, wird sie massiv
 
   // ---------- mesh builder ----------
@@ -380,9 +389,15 @@ const GF = (() => {
   // Wendeplatte: jede zweite Platte ist selbst die PETG-Trennung (kopfüber), Platten liegen direkt aufeinander
   // Wendeplatte: Leisten so hoch wie eine Platte und im Turm ebenfalls abwechselnd PLA/PETG ohne Zwischenlage
   const flipMode = (o) => o.sepStyle === 'flip' && o.stack;
+  // Perforation: ein Material, Platten abwechselnd kopfüber mit Luftspalt, dazwischen nur Punkte
+  const perfMode = (o) => o.sepStyle === 'perf' && o.stack;
+  const altFlip = (o) => o.sepStyle === 'flip' || o.sepStyle === 'perf';
+  const perfOpt = (o) => ({ gap: o.perfGap || PERF.gap, dot: o.perfDot || PERF.dot, pitch: o.perfPitch || PERF.pitch });
+  // zweites Material (PETG) im Spiel? Nur dann braucht es Platz für den Prime-Tower
+  const twoMaterials = (o) => !!o.stack && o.sepStyle !== 'perf';
   const spacerHeight = (o) => (flipMode(o) ? H : o.spacerH || H);
-  const spacerGap = (o) => (flipMode(o) ? 0 : o.sepT);
-  const sepGap = (o) => o.sepStyle === 'flip' ? 0 : o.sepStyle === 'grow' ? growHeight(o) + o.sepT : o.sepT;
+  const spacerGap = (o) => (flipMode(o) ? 0 : perfMode(o) ? perfOpt(o).gap : o.sepT);
+  const sepGap = (o) => o.sepStyle === 'flip' ? 0 : o.sepStyle === 'perf' ? perfOpt(o).gap : o.sepStyle === 'grow' ? growHeight(o) + o.sepT : o.sepT;
   function addGrowSeparator(m, tiles, Z0, gh, s) {
     const Za = Z0 + gh, Z1 = Za + s;
     for (const t of tiles) {
@@ -617,7 +632,7 @@ const GF = (() => {
         if (r.stacks.length === 1) return { ...r, flat: true };
       }
     }
-    const bx = BX - (o.stack ? o.towerReserve : 0), by = BY;
+    const bx = BX - (twoMaterials(o) ? o.towerReserve : 0), by = BY;
     let best = null;
     if (o.stack && sep) best = stackSplit(gX, gY, bx, by, o);
     if (!best) for (const [lx, ly] of [[bx, by], [by, bx]]) {
@@ -875,11 +890,11 @@ const GF = (() => {
         const top = s.items[s.items.length - 1];
         let it;
         if (margins) { // integrierte Ränder: nur ungedreht und bündig (alte Regel); gewendet spiegeln sich die Ränder in y
-          const flip = o.sepStyle === 'flip' ? s.items.length % 2 : 0;
+          const flip = altFlip(o) ? s.items.length % 2 : 0;
           const ay = flip ? { cells: p.ay.cells.slice().reverse(), mLow: p.ay.mHigh, mHigh: p.ay.mLow } : p.ay;
           const fx = axisFit(p.ax, top.pax), fy = axisFit(ay, top.pay);
           it = fx === null || fy === null ? null : { p, rot: 0, flip, pax: p.ax, pay: ay, dx: top.dx + fx, dy: top.dy + fy };
-        } else it = placeOn(p, top, o.sepStyle === 'flip' ? s.items.length % 2 : 0);
+        } else it = placeOn(p, top, altFlip(o) ? s.items.length % 2 : 0);
         if (!it) continue;
         // gleiche Platte oben bevorzugen, sonst die engste passende
         const score = (top.p.key === p.key ? 0 : 1e9) + top.p.w * top.p.d;
@@ -968,8 +983,102 @@ const GF = (() => {
         clips: (t.clips || []).map((c) => ({ ...c, cx: d - c.cy, cy: c.cx, q: (c.q + 1) % 4 })) };
     });
   }
+  // Kacheln einer Platte kopfüber (180° um x): y spiegelt sich, vorne und hinten tauschen
+  function flipTiles(tiles, d) {
+    const sw = (a) => a && [a[2], a[1], a[0], a[3]];
+    return tiles.map((t) => ({ ...t, y0: d - t.y1, y1: d - t.y0, boundary: sw(t.boundary), nbPocket: sw(t.nbPocket), feat: sw(t.feat),
+      clips: (t.clips || []).map((c) => ({ ...c, cy: d - c.cy, q: [3, 2, 1, 0][c.q] })) }));
+  }
+  // Kacheln einer Platte so, wie sie im Stapel liegt (gedreht, gewendet, verschoben)
+  function itemTiles(it) {
+    let T = it.rot ? rotTiles(it.p.type.tiles, it.p.d) : it.p.type.tiles;
+    if (it.flip) T = flipTiles(T, it.rot ? it.p.w : it.p.d);
+    return T.map((t) => moveTile(t, it.dx, it.dy));
+  }
+  // liegt ein Punkt (mit Rand m) im Material der Kacheln: im Umriss, nicht in einer Wandrundung, nicht über einer Verbindungstasche
+  function solidAt(tiles, x, y, m) {
+    for (const t of tiles) {
+      if (x < t.x0 - 1e-9 || x > t.x1 + 1e-9 || y < t.y0 - 1e-9 || y > t.y1 + 1e-9) continue;
+      let ok = true;
+      for (const c of t.clips || []) { const [sx, sy] = clipSign(c.q); if (sx * (x - c.cx) < 0 && sy * (y - c.cy) < 0 && Math.hypot(x - c.cx, y - c.cy) > c.r - m) ok = false; }
+      const F = ok && tileFeat(t);
+      if (F) {
+        const C = corners(t), g = connGeo(t.fit);
+        F.forEach((f, s) => {
+          if (!f || f.kind !== 2) return;
+          const a = C[s], b = C[(s + 1) % 4], L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+          const u = (x - a[0]) * ux + (y - a[1]) * uy, v = -(x - a[0]) * uy + (y - a[1]) * ux;
+          if (v < g.D + m && Math.abs(u - L / 2) < CONN.neck / 2 + g.D * g.tan + m) ok = false;
+        });
+      }
+      if (ok) return true;
+    }
+    return false;
+  }
+  // Punktraster unter einer Platte. kind 'top': Stegoberkanten liegen aufeinander (obere Platte kopfüber),
+  // 'foot': Plattenfüße liegen aufeinander. Massive Kacheln (Leisten, Ränder) bekommen ein gleichmäßiges Raster.
+  // lo: Kacheln der Platte darunter. Ragt sie über eine Außenkante der oberen Platte hinaus, liegt dort unten ein
+  // innerer Steg (±0,25 mm um die Kante) statt eines Außenrands: der Punkt rückt dann auf die halbe Randbreite.
+  function perfPoints(tiles, kind, P, lo) {
+    const under = (x, y) => !!lo && lo.some((t) => x > t.x0 && x < t.x1 && y > t.y0 && y < t.y1);
+    const pts = new Map(), add = (x, y) => pts.set(Math.round(x * 1e3) + ',' + Math.round(y * 1e3), [x, y]);
+    for (const t of tiles) {
+      const w = t.x1 - t.x0, d = t.y1 - t.y0;
+      if (!t.pocket) {
+        const nx = Math.max(1, Math.round(w / P.pitch)), ny = Math.max(1, Math.round(d / P.pitch));
+        for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) add(t.x0 + (i + 0.5) * w / nx, t.y0 + (j + 0.5) * d / ny);
+        continue;
+      }
+      const C = corners(t), B = t.boundary, e = T_BOT - PERF.edge;
+      for (let s = 0; s < 4; s++) {
+        const a = C[s], b = C[(s + 1) % 4], L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        // Reihen: [Abstand von der Kante, Anfang, Ende längs der Kante]
+        const out = B[s] && under((a[0] + b[0]) / 2 + uy, (a[1] + b[1]) / 2 - ux); // 1 mm außerhalb der Kante
+        const rows = kind === 'top'
+          ? [[B[s] ? (out ? TOP / 2 : TOP) : 0, B[(s + 3) % 4] ? TOP : 0, B[(s + 1) % 4] ? TOP : 0]] // Mitte der Stegoberkante
+          : [[e, e, e], ...(B[s] ? [[PERF.edge, PERF.edge, PERF.edge]] : [])];          // an der Taschenkante, am Außenrand
+        for (const [v, u0, u1] of rows) {
+          const n = Math.max(1, Math.round((L - u0 - u1) / P.pitch));
+          for (let k = 0; k <= n; k++) { const u = u0 + k * (L - u0 - u1) / n; add(a[0] + u * ux - v * uy, a[1] + u * uy + v * ux); }
+        }
+      }
+    }
+    return [...pts.values()];
+  }
+  // alle Punkte eines Druckjobs: [x, y, z unten, z oben]
+  function perfList(stack, o) {
+    if (!perfMode(o)) return [];
+    const P = perfOpt(o), m = P.dot / 2 + PERF.margin, per = H + P.gap, out = [];
+    let lo = null;
+    stack.items.forEach((it, k) => {
+      const up = itemTiles(it), lvk = it.lv ?? k;
+      if (lvk > 0 && lo) for (const [x, y] of perfPoints(up, it.flip ? 'top' : 'foot', P, lo)) if (solidAt(up, x, y, m) && solidAt(lo, x, y, m)) out.push([x, y, (lvk - 1) * per + H, lvk * per]);
+      lo = up;
+    });
+    const sh = spacerHeight(o), perS = sh + P.gap, placed = (e) => (e.rot ? rotTiles(e.sp.type.tiles, e.sp.type.d) : e.sp.type.tiles).map((t) => moveTile(t, e.x, e.y));
+    for (const e of (stack.spacers || [])) {
+      const lv = e.level || 0; if (!lv) continue;
+      const below = stack.spacers.find((q) => q.x === e.x && q.y === e.y && (q.level || 0) === lv - 1); if (!below) continue;
+      const up = placed(e), lw = placed(below);
+      for (const [x, y] of perfPoints(up, 'foot', P)) if (solidAt(up, x, y, m) && solidAt(lw, x, y, m)) out.push([x, y, (lv - 1) * perS + sh, lv * perS]);
+    }
+    return out;
+  }
+  function addDot(m, x, y, r, z0, z1) {
+    const n = PERF.seg, p = (i, z) => [x + r * Math.cos(2 * Math.PI * i / n), y + r * Math.sin(2 * Math.PI * i / n), z];
+    for (let i = 0; i < n; i++) m.quad(p(i, z0), p(i + 1, z0), p(i + 1, z1), p(i, z1));
+    for (let i = 1; i < n - 1; i++) { m.tri(p(0, z1), p(i, z1), p(i + 1, z1)); m.tri(p(0, z0), p(i + 1, z0), p(i, z0)); }
+  }
+  const dotVolume = (r, h) => PERF.seg / 2 * r * r * Math.sin(2 * Math.PI / PERF.seg) * h / 1000; // cm³
+  // zwei Netze hintereinanderhängen, ohne Punkte zu verschmelzen (getrennte Körper bleiben getrennt)
+  function concat(a, b) {
+    const m = new Mesh(), n = a.v.length / 3;
+    m.v = a.v.concat(b.v); m.f = a.f.concat(b.f.map((i) => i + n));
+    return m;
+  }
+
   function stackMeshes(stack, o) {
-    const pla = new Mesh(), petg = new Mesh(), gap = sepGap(o), per = H + gap;
+    const pla = new Mesh(), petg = new Mesh(), perf = new Mesh(), gap = sepGap(o), per = H + gap, pm = perfMode(o);
     stack.items.forEach((it, k) => {
       const base = it.rot ? rotTiles(it.p.type.tiles, it.p.d) : it.p.type.tiles;
       const lvk = it.lv ?? k;
@@ -977,12 +1086,13 @@ const GF = (() => {
         const tmp = new Mesh(); addPlate(tmp, base, 0, undefined, 'top');
         const dd = it.rot ? it.p.w : it.p.d, z0 = lvk * per, V = tmp.v, F = tmp.f;
         const P = (i) => [V[3 * i] + it.dx, dd - V[3 * i + 1] + it.dy, z0 + H - V[3 * i + 2]];
-        for (let q = 0; q < F.length; q += 3) petg.tri(P(F[q]), P(F[q + 1]), P(F[q + 2]));
+        const dst = pm ? pla : petg; // Perforation: auch die gewendete Platte ist PLA
+        for (let q = 0; q < F.length; q += 3) dst.tri(P(F[q]), P(F[q + 1]), P(F[q + 2]));
         return;
       }
       const tiles = base.map((t) => moveTile(t, it.dx, it.dy));
       addPlate(pla, tiles, lvk * per, undefined, lvk > 0 ? 'bottom' : 'full');
-      if (lvk > 0 && o.sepStyle !== 'flip') {
+      if (lvk > 0 && !altFlip(o)) {
         if (o.sepStyle === 'sheet') { // one continuous PETG foil over the whole footprint of the upper plate
           const sheet = tiles.map(t => ({ ...t, pocket: false, nbPocket: [false, false, false, false] }));
           addPlate(petg, sheet, (k - 1) * per + H, o.sepT);
@@ -997,7 +1107,7 @@ const GF = (() => {
       const lv = e.level || 0;
       // Wendeplatte: Leisten auf ungeraden Ebenen sind aus PETG (gleiche Höhen wie die PETG-Platten)
       merge(flip && lv % 2 ? petg : pla, t._mesh, e.x, e.y, e.rot, t.d, lv * perS);
-      if (lv > 0 && !flip) { // PETG sheet with the strip's footprint below it
+      if (lv > 0 && !flip && !pm) { // PETG sheet with the strip's footprint below it
         if (!t._sep || t._sepT !== o.sepT) { t._sep = new Mesh(); addPlate(t._sep, t.tiles, 0, o.sepT); t._sepT = o.sepT; }
         merge(petg, t._sep, e.x, e.y, e.rot, t.d, lv * perS - o.sepT);
       }
@@ -1009,7 +1119,8 @@ const GF = (() => {
     }
     const nl = stack.items.reduce((a, it, k) => Math.max(a, (it.lv ?? k) + 1), 0);
     const hp = nl ? nl * H + (nl - 1) * gap : 0;
-    return { pla, petg, height: Math.max(hp, hs) };
+    if (pm) { const r = perfOpt(o).dot / 2; for (const [x, y, z0, z1] of perfList(stack, o)) addDot(perf, x, y, r, z0, z1); }
+    return { pla, petg, perf, height: Math.max(hp, hs) };
   }
 
   function volume(m) { // cm^3
@@ -1063,9 +1174,9 @@ const GF = (() => {
     stack.items.forEach((it, k) => {
       const t = it.p.type, lvk = it.lv ?? k, tm = it.flip ? 'top' : lvk > 0 ? 'bottom' : 'full';
       const pv = vol(t, 'plate:' + tm, () => { const m = new Mesh(); addPlate(m, t.tiles, 0, undefined, tm); return m; });
-      if (it.flip) { petg += pv; return; }
+      if (it.flip && !perfMode(o)) { petg += pv; return; }
       pla += pv;
-      if (lvk > 0 && o.sepStyle !== 'flip') {
+      if (lvk > 0 && !altFlip(o)) {
         petg += vol(t, 'sep:' + o.sepStyle + ':' + o.sepT + ':' + o.overhang, () => {
           const m = new Mesh();
           if (o.sepStyle === 'sheet') addPlate(m, t.tiles.map(q => ({ ...q, pocket: false, nbPocket: [false, false, false, false] })), 0, o.sepT);
@@ -1080,12 +1191,13 @@ const GF = (() => {
     for (const e of (stack.spacers || [])) {
       const t = e.sp.type, lv = e.level || 0, sv = vol(t, 'sp:' + t.h, () => spacerMesh(t));
       if (flip && lv % 2) petg += sv; else pla += sv;
-      if (lv > 0 && !flip) petg += vol(t, 'spsep:' + o.sepT, () => { const m = new Mesh(); addPlate(m, t.tiles, 0, o.sepT); return m; });
+      if (lv > 0 && !flip && !perfMode(o)) petg += vol(t, 'spsep:' + o.sepT, () => { const m = new Mesh(); addPlate(m, t.tiles, 0, o.sepT); return m; });
       hs = Math.max(hs, lv * perS + sh);
     }
     for (const e of (stack.bridges || [])) { const t = e.sp.type; pla += vol(t, 'bridge', () => spacerMesh(t)); hs = Math.max(hs, t.h); }
     const nl = stack.items.reduce((a, it, k) => Math.max(a, (it.lv ?? k) + 1), 0);
-    return { pla, petg, height: Math.max(nl ? nl * H + (nl - 1) * gap : 0, hs) };
+    const dots = perfList(stack, o), perf = dots.length ? dots.reduce((a, q) => a + dotVolume(perfOpt(o).dot / 2, q[3] - q[2]), 0) : 0;
+    return { pla, petg, perf, dots: dots.length, height: Math.max(nl ? nl * H + (nl - 1) * gap : 0, hs) };
   }
 
   function threeMF(parts, objName, opts) {
@@ -1199,7 +1311,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;

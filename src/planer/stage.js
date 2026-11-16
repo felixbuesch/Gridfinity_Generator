@@ -144,7 +144,7 @@ export default class Stage {
     if (R.error) { disposeTree(this.beds); this.beds.clear(); this.bedBox = null; this.goStep(this.step, true); return; }
     const ox = R.AX.gapLow, oy = R.AY.gapLow, geos = new Map();
     // Wendeplatten (PETG) in der Schublade in PETG-Farbe zeigen
-    const flipped = new Set(); R.stacks.forEach((s) => s.items.forEach((it) => { if (it.flip) flipped.add(it.p); }));
+    const flipped = new Set(); if (o.sepStyle !== 'perf') R.stacks.forEach((s) => s.items.forEach((it) => { if (it.flip) flipped.add(it.p); }));
     if (GF.flipMode(o)) R.stacks.forEach((s) => s.spacers.forEach((e) => { if ((e.level || 0) % 2) flipped.add(e.sp); }));
     const gget = (key, which) => { const k = key + which; if (!geos.has(k)) { const g = toGeo(P.mesh(key)[which]); g.userData.shared = false; geos.set(k, g); } return geos.get(k); };
     R.pieces.forEach((p, i) => {
@@ -224,7 +224,7 @@ export default class Stage {
         const mat = std(color, { roughness: 0.5, clippingPlanes: [plane], clipShadows: true, side: THREE.DoubleSide });
         const mm = new THREE.Mesh(toGeo(mesh), mat); mm.castShadow = mm.receiveShadow = true; g.add(mm);
       };
-      mk(m.pla, COL.pla); mk(m.petg, COL.petg);
+      mk(m.pla, COL.pla); mk(m.petg, COL.petg); if (m.perf && m.perf.f.length) mk(m.perf, COL.pla);
       // leuchtende Schichtlinie: Rechteck der Druckfläche auf aktueller Höhe
       const bb = new THREE.Box3();
       for (const it of s.items) bb.expandByPoint(new THREE.Vector3(it.dx, it.dy, 0)).expandByPoint(new THREE.Vector3(it.dx + (it.rot ? it.p.d : it.p.w), it.dy + (it.rot ? it.p.w : it.p.d), 0));
@@ -370,6 +370,7 @@ export function partGroup(P, key, withDims) {
   const m = P.mesh(key), g = new THREE.Group();
   if (m.pla && m.pla.f.length) g.add(new THREE.Mesh(toGeo(m.pla), std(COL.pla, { roughness: 0.5 })));
   if (m.petg && m.petg.f.length) g.add(new THREE.Mesh(toGeo(m.petg), std(COL.petg, { roughness: 0.45 })));
+  if (m.perf && m.perf.f.length) g.add(new THREE.Mesh(toGeo(m.perf), std(COL.pla, { roughness: 0.5 })));
   if (m.spacer) g.add(new THREE.Mesh(toGeo(m.spacer), std(COL.spacer)));
   if (withDims) {
     const bb = new THREE.Box3().setFromObject(g), sz = bb.getSize(new THREE.Vector3());

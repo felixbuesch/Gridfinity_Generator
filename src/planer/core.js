@@ -20,7 +20,7 @@ export function plan(o) {
     let res;
     if (kind === 'P') res = { pla: GF.plateMesh(R.types[idx]) };
     else if (kind === 'R') res = { spacer: GF.spacerMesh(R.spacers.types[idx]) };
-    else { const s = GF.stackMeshes(R.stacks[idx], o); res = { pla: s.pla, petg: s.petg, height: s.height }; }
+    else { const s = GF.stackMeshes(R.stacks[idx], o); res = { pla: s.pla, petg: s.petg, perf: s.perf, height: s.height }; }
     cache.set(key, res); return res;
   };
   return { R, o, mesh };
@@ -38,8 +38,8 @@ export function stats(P) {
   if (R.error) return null;
   // Material aus den fertigen Druckbetten: PLA (Platten + Leisten) und PETG (Trennung bzw. Wendeplatten)
   let pla = 0, petg = 0;
-  R.stacks.forEach((s, i) => { const m = info(P, i); pla += m.pla; petg += m.petg; });
-  const flips = R.stacks.reduce((a, s) => a + s.items.filter((it) => it.flip).length, 0);
+  R.stacks.forEach((s, i) => { const m = info(P, i); pla += m.pla + (m.perf || 0); petg += m.petg; });
+  const flips = o.sepStyle === 'perf' ? 0 : R.stacks.reduce((a, s) => a + s.items.filter((it) => it.flip).length, 0);
   const flipSp = GF.flipMode(o) ? R.stacks.reduce((a, s) => a + s.spacers.filter((e) => (e.level || 0) % 2).length, 0) : 0;
   return {
     nx: cellCount(R.AX.cells), ny: cellCount(R.AY.cells), plates: R.pieces.length, spacers: R.spacers.list.length, jobs: R.stacks.length,
@@ -54,14 +54,15 @@ export function jobOf(P, sel) {
     const p = R.pieces[sel.idx];
     for (let i = 0; i < R.stacks.length; i++) {
       const k = R.stacks[i].items.findIndex((it) => it.p === p);
-      if (k >= 0) return { i, level: k, of: R.stacks[i].items.length, flip: !!R.stacks[i].items[k].flip };
+      if (k >= 0) return { i, level: k, of: R.stacks[i].items.length, flip: !!R.stacks[i].items[k].flip, petg: !!R.stacks[i].items[k].flip && P.o.sepStyle !== 'perf' };
     }
     return null;
   }
   const sp = R.spacers.list[sel.idx], i = R.stacks.indexOf(sp.job);
   const e = sp.job.spacers.find((q) => q.sp === sp);
   const level = e ? e.level || 0 : 0;
-  return { i, level, of: sp.job.spacers.filter((q) => e && q.x === e.x && q.y === e.y).length, spacer: true, flip: GF.flipMode(P.o) && level % 2 === 1 };
+  const fl = GF.flipMode(P.o) && level % 2 === 1;
+  return { i, level, of: sp.job.spacers.filter((q) => e && q.x === e.x && q.y === e.y).length, spacer: true, flip: fl, petg: fl };
 }
 export const jobName = (st) => (st.items.length ? (st.items.length > 1 ? 'Stapel ' : 'Druckjob ') + st.label : 'Leisten-Bett ' + st.label);
 export const bridgeCount = (st) => (st.bridges || []).reduce((a, e) => a + e.sp.type.n, 0);
@@ -78,12 +79,14 @@ export function filesFor(P, key) {
   } else {
     const s = R.stacks[i], m = P.mesh(key);
     // liegt der Job intern quer, für die Datei richtig herum aufs Bett drehen (X <= Bett X)
-    const pla = GF.toBed(m.pla, s), petg = GF.toBed(m.petg, s);
+    const perf = m.perf && m.perf.f.length ? GF.toBed(m.perf, s) : null;
+    // Perforation: Punkte sind eigene Körper aus demselben Material, in der STL hängen sie am PLA-Netz
+    const pla0 = GF.toBed(m.pla, s), pla = perf ? GF.concat(pla0, perf) : pla0, petg = GF.toBed(m.petg, s);
     const base = `${s.label}_${s.items.map((it) => it.p.type.label).join('')}${s.spacers.length ? (s.items.length ? '_mit_' : '') + s.spacers.length + 'Leisten' : ''}${bridgeCount(s) ? '_' + bridgeCount(s) + 'Bruecken' : ''}`;
     out.push([base + '_PLA.stl', GF.stl(pla, base + ' PLA')]);
     if (petg.f.length) out.push([base + '_PETG.stl', GF.stl(petg, base + ' PETG')]);
     // Bambu-Studio-Projekt: PLA-Teil auf Filament 1, PETG-Teil auf Filament 2
-    out.push([base + '.3mf', GF.threeMF([{ name: base + ' PLA', mesh: pla, extruder: 1 }, { name: base + (P.o.sepStyle === 'flip' ? ' PETG Wendeplatten' : ' PETG Trennschicht'), mesh: petg, extruder: 2 }], base)]);
+    out.push([base + '.3mf', GF.threeMF([{ name: base + ' PLA', mesh: pla0, extruder: 1 }, ...(perf ? [{ name: base + ' Perforation (PLA)', mesh: perf, extruder: 1 }] : []), { name: base + (P.o.sepStyle === 'flip' ? ' PETG Wendeplatten' : ' PETG Trennschicht'), mesh: petg, extruder: 2 }], base)]);
   }
   return out;
 }
@@ -116,6 +119,16 @@ export function readme(P, use) {
     L.push(flat ? '  Alles passt flach auf ein Druckbett: nur PLA, kein PETG, kein Prime-Tower.' : '  Nicht gestapelt: jede Datei ist ein Druck in PLA.',
       `  1. ${R.stacks[0] ? R.stacks[0].label : 'J1'}*.3mf (oder die PLA-STL) öffnen.`, '  2. Stützen aus, Schichthöhe 0,2 mm.');
   } else {
+    if (o.sepStyle === 'perf') {
+      const pf = GF.perfOpt(o);
+      L.push('  Stapel aus einem Material (Perforation): alles PLA, kein PETG, kein Prime-Tower.',
+        `  Die Platten liegen abwechselnd kopfüber mit ${mm(pf.gap)} mm Luftspalt. Dazwischen stehen Punkte (Durchmesser ${mm(pf.dot)} mm, Abstand etwa ${mm(pf.pitch)} mm) als Sollbruchstellen.`,
+        '  1. S*.3mf öffnen (oder S*_PLA.stl). Alles ist Filament 1 = PLA.',
+        `  2. Schichthöhe 0,2 mm, auch die erste Schicht (der Luftspalt muss ein Vielfaches der Schichthöhe sein). Stützen aus, kein Prime-Tower.`,
+        '  3. Wandgenerator Arachne (Standard) lassen, damit die kleinen Punkte gedruckt werden. Bauteillüfter 100 %.',
+        '  4. Nach dem Druck die Platten einzeln von oben abhebeln (Spachtel in den Spalt), jede zweite umdrehen, Punktreste abbrechen.');
+      return L.join('\r\n');
+    }
     if (o.sepStyle === 'flip') L.push('  Stapel mit Wendeplatten: Jede zweite Grundplatte ist aus PETG und liegt kopfüber im Stapel.', '  Sie trennt die PLA-Platten und wird nach dem Druck einfach umgedreht: dann ist sie eine normale Grundplatte für den Einsatz.');
     else L.push(`  Stapel mit PETG-Trennschicht ${mm(o.sepT)} mm, Form: ${({ sheet: 'durchgehende Folie', wedge: 'Netz mit 45°-Keil', ring: 'Netz unter den Stegen', grow: `wächst aus der Stegkante mit ${mm(o.overhang, 0)}° Überhang` })[o.sepStyle]}.`);
     L.push('  1. S*.3mf öffnen (PLA-Teil = Filament 1, PETG-Teil = Filament 2).',

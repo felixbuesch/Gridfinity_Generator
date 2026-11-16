@@ -1,0 +1,26 @@
+Testdruck „Ein Material, Perforation“
+
+Alles PLA, ein Filament. Kein PETG, kein Prime-Tower, keine Stützen.
+Platten: 2 × 2 Zellen (84 × 84 × 4,4 mm). Luftspalt 0.4 mm, Punktdurchmesser 0.8 mm.
+
+Einstellungen in Bambu Studio:
+  Schichthöhe 0,2 mm, erste Schicht ebenfalls 0,2 mm (der Luftspalt muss ein Vielfaches der Schichthöhe sein)
+  Stützen aus, Wandgenerator Arachne (Standard), Bauteillüfter 100 %
+  2 Wände, 15 % Füllung reichen
+
+Test_Perforation_4Abstaende.3mf  (174 × 176 mm, etwa 52 g)
+  Vier Stapel aus je zwei Platten: unten aufrecht, oben kopfüber. Getestet wird die Fuge „Steg auf Steg“.
+  Stapel 1 (1 Noppe, vorne links): Punktabstand 4 mm, 351 Punkte
+  Stapel 2 (2 Noppen, vorne rechts): Punktabstand 6 mm, 243 Punkte
+  Stapel 3 (3 Noppen, hinten links): Punktabstand 9 mm, 171 Punkte
+  Stapel 4 (4 Noppen, hinten rechts): Punktabstand 12 mm, 99 Punkte
+  Prüfen: Welcher Stapel lässt sich von Hand oder mit einem Spachtel trennen, ohne dass die obere Platte
+  im Druck verrutscht ist? Wie sehen die Stegoberkanten danach aus?
+
+Test_Perforation_3Platten.3mf  (84 × 84 mm, 14,0 mm hoch, etwa 19 g)
+  Ein Stapel aus drei Platten mit 6 mm Punktabstand: aufrecht, kopfüber, aufrecht.
+  Enthält zusätzlich die Fuge „Fuß auf Fuß“ (zwischen Platte 2 und 3). Das ist die kritischere Fuge,
+  weil die Fläche größer ist. Prüfen: Löst sich Platte 3? Wie rau ist ihre Unterseite?
+
+Den besten Punktabstand danach im Planer unter Profi-Einstellungen eintragen.
+Klebt es zu fest: Z-Abstand 0,6 mm oder größerer Punktabstand. Löst es sich im Druck: kleinerer Abstand oder Punkte 1,0 mm.

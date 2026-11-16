@@ -85,11 +85,11 @@
     const ox = R.AX.gapLow, oy = R.AY.gapLow, j = jobOf(P, sel);
     if (sel.kind === 'P') {
       const p = R.pieces[sel.idx]; if (!p) return null;
-      const petg = !!(j && j.flip), v = GF.volume(P.mesh(plateKey(P, p)).pla);
+      const petg = !!(j && j.petg), v = GF.volume(P.mesh(plateKey(P, p)).pla);
       return { tag: p.type.label, title: 'Platte', sub: cellsOf(p), rows: [['Maße', `${fmt(p.w)} × ${fmt(p.d)} × 4,4 mm`], ['Position', `${fmt(ox + p.x)} / ${fmt(oy + p.y)} mm ab links / vorne`], ['Gleiche Teile', `${p.type.pieces.length}×`], [petg ? 'PETG' : 'PLA', `${fmt(v * (petg ? 1.27 : PLA_DENSITY), 0)} g${petg ? ' · kopfüber gedruckt' : ''}`]], j };
     }
     const s = R.spacers.list[sel.idx]; if (!s) return null; const t = s.type;
-    const petg = !!(j && j.flip), v = GF.volume(P.mesh(spacerKey(P, s)).spacer);
+    const petg = !!(j && j.petg), v = GF.volume(P.mesh(spacerKey(P, s)).spacer);
     return { tag: t.label, title: 'Leiste', sub: '', rows: [['Maße', `${fmt(t.w, 2)} × ${fmt(t.d, 2)} × ${fmt(t.h, 2)} mm`], ['Form', o.spacerStyle === 'solid' || t.tiles.length === 1 ? 'voll' : `Leiter, ${fmt(o.rail, 2)} mm Schienen`], ['Position', `${fmt(ox + s.x0)} / ${fmt(oy + s.y0)} mm ab links / vorne`], ['Gleiche Teile', `${t.items.length}×`], [petg ? 'PETG' : 'PLA', `${fmt(v * (petg ? 1.27 : PLA_DENSITY), 1)} g`]], j };
   });
 
@@ -129,6 +129,7 @@
     ['minSpacer', 'Mindestbreite Leiste (mm)', 0, 42], ['spacerH', 'Leistenhöhe (mm)', 0.6, 4.4], ['rail', 'Schiene (mm)', 0.8, 20], ['ribPitch', 'Streben alle (mm)', 8, 500],
     ['bedX', 'Bett X (mm)', 50, 1000], ['bedY', 'Bett Y (mm)', 50, 1000], ['bedZ', 'Höhe Z (mm)', 10, 1000],
     ['connFit', 'Spiel Verbindung (mm)', 0, 0.5],
+    ['perfPitch', 'Perforation: Punktabstand (mm)', 2, 30], ['perfDot', 'Perforation: Punkt-Ø (mm)', 0.4, 3], ['perfGap', 'Perforation: Z-Abstand (mm)', 0.1, 1.2],
     ['sepT', 'PETG-Basisschicht (mm)', 0.1, 5], ['overhang', 'Überhang (°)', 20, 70], ['maxStack', 'Max. Platten je Stapel', 1, 100], ['towerReserve', 'Platz Prime-Tower (mm)', 0, 200],
   ];
 </script>
@@ -218,11 +219,13 @@
         {#if o.stack && !R.flat}
           <div class="f" data-tip={TIPS.sepStyle}>Trennung zwischen den Platten
             <div class="seg">
-              <button type="button" aria-pressed={o.sepStyle !== 'flip'} onclick={() => (o.sepStyle = 'grow')}>Aus Stegspitze</button>
+              <button type="button" aria-pressed={o.sepStyle !== 'flip' && o.sepStyle !== 'perf'} onclick={() => (o.sepStyle = 'grow')}>Aus Stegspitze</button>
               <button type="button" aria-pressed={o.sepStyle === 'flip'} onclick={() => (o.sepStyle = 'flip')} data-tip={TIPS.flip}>Wendeplatte</button>
+              <button type="button" aria-pressed={o.sepStyle === 'perf'} onclick={() => (o.sepStyle = 'perf')} data-tip={TIPS.perf}>Ein Material, Perforation</button>
             </div>
           </div>
           {#if o.sepStyle === 'flip'}<p class="hint">Jede zweite Platte wird aus <b class="pe">PETG kopfüber</b> gedruckt und trennt die PLA-Platten. Nach dem Druck umdrehen, dann ist sie eine normale Grundplatte. Die Leisten sind dann 4,4 mm hoch und wechseln im Turm genauso zwischen PLA und <b class="pe">PETG</b>. In der 3D-Ansicht orange.</p>{/if}
+          {#if o.sepStyle === 'perf'}<p class="hint">Alles aus PLA, kein PETG und kein Prime-Tower. Die Platten liegen abwechselnd kopfüber mit {fmt(o.perfGap, 2)} mm Luftspalt, dazwischen stehen nur Punkte als Sollbruchstellen. Noch nicht am Drucker erprobt: zuerst die Testdatei drucken. Abstand, Durchmesser und Z-Abstand stehen in den Profi-Einstellungen.</p>{/if}
         {/if}
         {#if !R.error && R.pieces.length > (o.copies || 1)}
           <div class="f" data-tip={TIPS.connect}>Platten verbinden
@@ -304,7 +307,7 @@
       <dl>{#each card.rows as [k, v]}<dt>{k}</dt><dd>{v}</dd>{/each}</dl>
       {#if card.j}
         {@const j = card.j}
-        <div class="cj">{jobName(R.stacks[j.i])}{j.of > 1 ? ` · Ebene ${j.level + 1}/${j.of}` : ''}{j.flip ? ' · PETG kopfüber' : ''}
+        <div class="cj">{jobName(R.stacks[j.i])}{j.of > 1 ? ` · Ebene ${j.level + 1}/${j.of}` : ''}{j.flip ? (j.petg ? ' · PETG kopfüber' : ' · kopfüber') : ''}
           <button class="ghost" type="button" onclick={() => zipJob(j.i)} data-tip={TIPS.job}>↓</button></div>
       {/if}
     {:else}
@@ -324,7 +327,7 @@
     </div>
     <div class="f" data-tip={TIPS.sepStyle}>PETG-Trennschicht
       <div class="seg wrap">
-        {#each [['grow', 'Aus Stegspitze'], ['flip', 'Wendeplatte'], ['ring', 'Netz'], ['wedge', 'Netz + Keil'], ['sheet', 'Folie']] as [v, l]}
+        {#each [['grow', 'Aus Stegspitze'], ['flip', 'Wendeplatte'], ['perf', 'Perforation'], ['ring', 'Netz'], ['wedge', 'Netz + Keil'], ['sheet', 'Folie']] as [v, l]}
           <button type="button" aria-pressed={o.sepStyle === v} onclick={() => (o.sepStyle = v as Opts['sepStyle'])}>{l}</button>
         {/each}
       </div>
