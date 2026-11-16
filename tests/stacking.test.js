@@ -174,7 +174,7 @@ describe('flache Stegoberkante (kein Absatz oben)', () => {
 
 describe('Außenrand oben', () => {
   it('Außenkante ist oben 0,5 mm breit wie ein innerer Steg', () => {
-    const R = GF.compute({ ...BASE, boxW: 85, boxD: 85, stack: false });
+    const R = GF.compute({ ...BASE, boxW: 85, boxD: 85, stack: false, cornerR: 0 }); // eckige Wand: Abstand zum Rechteckrand messbar
     const m = GF.plateMesh(R.types[0]), v = m.v;
     // kleinster Abstand eines Taschen-Oberkantenpunkts (z = H, innerhalb) zum Außenrand
     const P = R.types[0].rep;

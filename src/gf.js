@@ -8,6 +8,10 @@ const GF = (() => {
   const PROFILE = [[0, 2.85], [0.7, 2.15], [2.5, 2.15], [H, TOP]];
   const T_BOT = 2.85, CHAMFER_Z = 2.5, CHAMFER_T = 2.15;
   const ARC = 8; // segments per rounded corner
+  // Eckrundung der Wand (Schublade/Box): alle Teile bleiben innerhalb der Wandrundung minus Spiel
+  const MIN_ROUND = 0.2;   // mm: kleinere Rundungen werden nicht geschnitten
+  const ARC_SAG = 0.02;    // mm: größte Abweichung der Sehnen vom Kreisbogen
+  const MIN_POCKET = 150;  // mm²: bleibt vom Taschenboden einer beschnittenen Zelle weniger, wird sie massiv
 
   // ---------- mesh builder ----------
   function Mesh() { this.v = []; this.f = []; this.map = new Map(); }
@@ -36,7 +40,7 @@ const GF = (() => {
   function ring(tile, t, z, ex) {
     const { x0, y0, x1, y1 } = tile, r = R - t, [eS, eE, eN, eW] = ex || [0, 0, 0, 0];
     const cs = [[x0 + t + eW + r, y0 + t + eS + r, 180], [x1 - t - eE - r, y0 + t + eS + r, 270], [x1 - t - eE - r, y1 - t - eN - r, 0], [x0 + t + eW + r, y1 - t - eN - r, 90]];
-    return cs.map(([cx, cy, a0]) => {
+    const arcs = cs.map(([cx, cy, a0]) => {
       const arc = [];
       for (let i = 0; i <= ARC; i++) {
         const a = (a0 + 90 * i / ARC) * Math.PI / 180;
@@ -44,15 +48,103 @@ const GF = (() => {
       }
       return arc;
     });
+    if (!isClipped(tile)) return arcs;
+    // beschnittene Zelle: Ring = Normalring ∩ (Wandrundung um t nach innen versetzt) -> geschlossene Punktfolge
+    let P = flat(arcs).map((p) => ({ x: p[0], y: p[1] }));
+    for (const c of tile.clips) P = clipPoly(P, c, t + ((ex && ex[4]) || 0));
+    const loop = P.map((p) => [p.x, p.y, z]);
+    loop.loop = true; loop.c = pocketCentre(tile);
+    return loop;
+  }
+  const isClipped = (tile) => !!(tile.clips && tile.clips.length);
+
+  // ---------- Wandrundung: Schnitt eines konvexen Vielecks mit einer gerundeten Ecke ----------
+  // clip = {cx, cy, r, q}: Kreis (Mitte, Radius) der Wandrundung minus Spiel; q = Ecke 0 SW, 1 SE, 2 NE, 3 NW.
+  // Entfernt wird, was im Eckquadranten außerhalb des Kreises liegt. Der Rest ist konvex.
+  const clipSign = (q) => [q === 0 || q === 3 ? 1 : -1, q < 2 ? 1 : -1];
+  // schneidet die Rundung in das Rechteck? (dann liegt dessen äußerste Ecke im entfernten Bereich)
+  function clipCuts(c, x0, y0, x1, y1) {
+    const [sx, sy] = clipSign(c.q), px = sx > 0 ? x0 : x1, py = sy > 0 ? y0 : y1;
+    return sx * (px - c.cx) < -1e-9 && sy * (py - c.cy) < -1e-9 && Math.hypot(px - c.cx, py - c.cy) > c.r + 1e-9;
+  }
+  // pts: [{x, y, b}] gegen den Uhrzeigersinn, b = Kante zum nächsten Punkt ist Außenkante. shrink: Kreis um so viel kleiner
+  function clipPoly(pts, c, shrink = 0) {
+    const r = c.r - shrink;
+    if (!(r > 0)) return pts;
+    const [sx, sy] = clipSign(c.q);
+    const gone = pts.map((p) => sx * (p.x - c.cx) < -1e-9 && sy * (p.y - c.cy) < -1e-9 && (p.x - c.cx) ** 2 + (p.y - c.cy) ** 2 > r * r + 1e-9);
+    if (!gone.includes(true)) return pts;
+    if (!gone.includes(false)) return [];
+    const cross = (a, b, last) => { // Schnittpunkt der Strecke mit dem Kreis
+      const dx = b.x - a.x, dy = b.y - a.y, fx = a.x - c.cx, fy = a.y - c.cy;
+      const A = dx * dx + dy * dy, B = 2 * (fx * dx + fy * dy), C = fx * fx + fy * fy - r * r, q = Math.sqrt(Math.max(0, B * B - 4 * A * C));
+      const t = Math.min(1, Math.max(0, (-B + (last ? q : -q)) / (2 * A)));
+      return { x: a.x + t * dx, y: a.y + t * dy };
+    };
+    const n = pts.length, k0 = gone.indexOf(false), res = [];
+    let exit = null;
+    for (let i = 0; i < n; i++) {
+      const ia = (k0 + i) % n, ib = (ia + 1) % n, a = pts[ia], b = pts[ib];
+      if (!gone[ia]) res.push(a);
+      if (!gone[ia] && gone[ib]) { exit = cross(a, b, true); res.push({ ...exit, b: true, arc: true }); }
+      else if (gone[ia] && !gone[ib]) {
+        const entry = cross(a, b, false), N = Math.max(ARC, Math.ceil((Math.PI / 2) / Math.sqrt(8 * ARC_SAG / r))), step = Math.PI / 2 / N, tol = 0.02 / r;
+        const a0 = Math.atan2(exit.y - c.cy, exit.x - c.cx); let a1 = Math.atan2(entry.y - c.cy, entry.x - c.cx);
+        while (a1 < a0) a1 += 2 * Math.PI;
+        for (let k = Math.ceil((a0 + tol) / step); k * step < a1 - tol; k++) res.push({ x: c.cx + r * Math.cos(k * step), y: c.cy + r * Math.sin(k * step), b: true, arc: true });
+        res.push({ ...entry, b: a.b });
+      }
+    }
+    // doppelte Punkte (Schnitt genau auf einer Ecke) entfernen: der spätere Punkt trägt die richtige Kante
+    return res.filter((p, i) => { const q = res[(i + 1) % res.length]; return Math.hypot(p.x - q.x, p.y - q.y) > 1e-6; });
+  }
+  // Umriss einer beschnittenen Kachel (sonst null)
+  function outline(t) {
+    if (!isClipped(t)) return null;
+    let P = [{ x: t.x0, y: t.y0, b: t.boundary[0] }, { x: t.x1, y: t.y0, b: t.boundary[1] }, { x: t.x1, y: t.y1, b: t.boundary[2] }, { x: t.x0, y: t.y1, b: t.boundary[3] }];
+    for (const c of t.clips) P = clipPoly(P, c);
+    return P;
+  }
+  // Taschenboden (Einzug T_BOT) einer beschnittenen Zelle als Vieleck
+  function pocketFloor(tile) {
+    const r = R - T_BOT, { x0, y0, x1, y1 } = tile, t = T_BOT, P0 = [];
+    for (const [cx, cy, a0] of [[x0 + t + r, y0 + t + r, 180], [x1 - t - r, y0 + t + r, 270], [x1 - t - r, y1 - t - r, 0], [x0 + t + r, y1 - t - r, 90]])
+      for (let i = 0; i <= ARC; i++) { const a = (a0 + 90 * i / ARC) * Math.PI / 180; P0.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }); }
+    let P = P0;
+    for (const c of tile.clips) P = clipPoly(P, c, t);
+    return P;
+  }
+  function pocketCentre(tile) {
+    const P = pocketFloor(tile); let x = 0, y = 0;
+    for (const p of P) { x += p.x; y += p.y; }
+    return [x / P.length, y / P.length];
+  }
+  const polyArea = (P) => P.reduce((a, p, i) => { const q = P[(i + 1) % P.length]; return a + (p.x * q.y - q.x * p.y) / 2; }, 0);
+  // Fläche zwischen zwei konvexen, gleich umlaufenden Punktfolgen P und Q, die beide um c herum liegen
+  // (dürfen verschieden viele Punkte haben). Normale = Umlaufrichtung × (Q − P); flip dreht sie um.
+  function zipLoops(m, P, Q, c, flip) {
+    const ang = (p) => Math.atan2(p[1] - c[1], p[0] - c[0]);
+    const start = (L) => { let k = 0, best = Infinity; L.forEach((p, i) => { const a = ang(p); if (a < best) { best = a; k = i; } }); return L.slice(k).concat(L.slice(0, k)); };
+    P = start(P); Q = start(Q);
+    const nP = P.length, nQ = Q.length, next = (L, i, n) => (i < n ? ang(L[(i + 1) % n]) + (i + 1 === n ? 2 * Math.PI : 0) : Infinity);
+    let i = 0, j = 0;
+    while (i < nP || j < nQ) {
+      let a, b, d;
+      if (next(P, i, nP) <= next(Q, j, nQ)) { a = P[i % nP]; b = P[(i + 1) % nP]; d = Q[j % nQ]; i++; }
+      else { a = Q[j % nQ]; b = P[i % nP]; d = Q[(j + 1) % nQ]; j++; }
+      flip ? m.tri(a, d, b) : m.tri(a, b, d);
+    }
   }
   // Außenkante der Platte: oben genauso breit wie ein Steg zwischen zwei Zellen (2 × TOP = 0,5 mm),
   // sonst wäre der Rand nur 0,25 mm breit und der Slicer lässt ihn weg (Lücke zwischen PLA und PETG am Rand)
-  const topEx = (tile) => (tile.boundary || [false, false, false, false]).map((b) => (b ? TOP : 0));
+  // 5. Wert: Zuschlag entlang einer Wandrundung (ist immer Außenkante)
+  const topEx = (tile) => [...(tile.boundary || [false, false, false, false]).map((b) => (b ? TOP : 0)), isClipped(tile) ? TOP : 0];
   const flat = (rg) => [].concat(...rg);
   const corners = (tile) => [[tile.x0, tile.y0], [tile.x1, tile.y0], [tile.x1, tile.y1], [tile.x0, tile.y1]];
 
   // surface between two rings (A below B). faceOut: normal away from tile centre
   function loft(m, A, B, faceOut) {
+    if (A.loop) return zipLoops(m, A, B, A.c, !faceOut);
     const a = flat(A), b = flat(B), n = a.length;
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
@@ -61,6 +153,7 @@ const GF = (() => {
   }
   // flat face between tile rectangle and a ring, at z
   function rectAnnulus(m, tile, rg, z, up) {
+    if (rg.loop) return zipLoops(m, outline(tile).map((p) => [p.x, p.y, z]), rg, rg.c, !up);
     const C = corners(tile).map(p => [p[0], p[1], z]);
     for (let c = 0; c < 4; c++) {
       const arc = rg[c];
@@ -112,6 +205,11 @@ const GF = (() => {
     }
     return segs;
   }
+  // Umriss einer massiven Kachel auf Höhe z
+  function tilePoly(tile, knife, z) {
+    const O = outline(tile);
+    return O ? O.map((p) => [p.x, p.y, z]) : polyFromSegs(perimeter(tile, knife), z);
+  }
   function polyFromSegs(segs, z) {
     const out = [];
     for (const s of segs) for (let i = 0; i < s.pts.length - 1; i++) out.push(z3(s.pts[i], z));
@@ -119,6 +217,11 @@ const GF = (() => {
   }
   // vertical boundary walls between levels zb (knifeB) and zt (knifeT)
   function walls(m, tile, zb, zt, kb, kt) {
+    const O = outline(tile);
+    if (O) {
+      O.forEach((p, i) => { if (!p.b) return; const q = O[(i + 1) % O.length]; m.quad([p.x, p.y, zb], [q.x, q.y, zb], [q.x, q.y, zt], [p.x, p.y, zt]); });
+      return;
+    }
     const sb = perimeter(tile, kb), st = perimeter(tile, kt);
     for (let i = 0; i < sb.length; i++) {
       if (!sb[i].boundary) continue;
@@ -150,9 +253,8 @@ const GF = (() => {
         rectAnnulus(m, t, rings[0], z0, false);
         rectAnnulus(m, t, rings[rings.length - 1], z0 + H, true);
       } else {
-        const segsT = perimeter(t, kt), segsB = perimeter(t, kb);
-        m.fan(polyFromSegs(segsT, z0 + (t.pocket ? H : HS)));
-        m.fan(polyFromSegs(segsB, z0).reverse());
+        m.fan(tilePoly(t, kt, z0 + HS));
+        m.fan(tilePoly(t, kb, z0).reverse());
       }
       walls(m, t, z0, z0 + (t.pocket ? H : HS), kb, kt);
     }
@@ -181,8 +283,8 @@ const GF = (() => {
           rectAnnulus(m, t, hi, Z1, true);
         }
       } else {
-        m.fan(polyFromSegs(perimeter(t, kt), Z1));
-        m.fan(polyFromSegs(perimeter(t, kb), Z0).reverse());
+        m.fan(tilePoly(t, kt, Z1));
+        m.fan(tilePoly(t, kb, Z0).reverse());
       }
       walls(m, t, Z0, Z1, kb, kt);
     }
@@ -208,8 +310,8 @@ const GF = (() => {
         rectAnnulus(m, t, r0, Z0, false);
         rectAnnulus(m, t, r1, Z1, true);
       } else {
-        m.fan(polyFromSegs(perimeter(t, kt), Z1));
-        m.fan(polyFromSegs(perimeter(t, kb), Z0).reverse());
+        m.fan(tilePoly(t, kt, Z1));
+        m.fan(tilePoly(t, kb, Z0).reverse());
       }
       walls(m, t, Z0, Z1, kb, kt);
     }
@@ -266,7 +368,7 @@ const GF = (() => {
   function axisKey(a) { return a.mLow + '|' + a.cells.join(',') + '|' + a.mHigh; }
 
   // build tiles of a piece (local coords, origin at its min corner)
-  function pieceTiles(p, cornerR) {
+  function pieceTiles(p, clips) {
     const cols = [], rows = [];
     const mk = (ax, out) => {
       let x = 0;
@@ -279,7 +381,7 @@ const GF = (() => {
     for (let j = 0; j < rows.length; j++) {
       grid.push([]);
       for (let i = 0; i < cols.length; i++) {
-        const t = { x0: cols[i].a, x1: cols[i].b, y0: rows[j].a, y1: rows[j].b, pocket: cols[i].cell && rows[j].cell, i, j, rounds: {} };
+        const t = { x0: cols[i].a, x1: cols[i].b, y0: rows[j].a, y1: rows[j].b, pocket: cols[i].cell && rows[j].cell, i, j, rounds: {}, clips: [] };
         grid[j].push(t); tiles.push(t);
       }
     }
@@ -287,22 +389,35 @@ const GF = (() => {
       const nb = [grid[t.j - 1] && grid[t.j - 1][t.i], grid[t.j][t.i + 1], grid[t.j + 1] && grid[t.j + 1][t.i], grid[t.j][t.i - 1]]; // S,E,N,W
       t.boundary = nb.map(n => !n);
       t.nbPocket = nb.map(n => !!(n && n.pocket));
-      if (!t.pocket && cornerR > 0) {
-        const outer = p.outer; // which outer edges of the whole layout this piece touches: [S,E,N,W]
-        const lim = Math.min(t.x1 - t.x0, t.y1 - t.y0) - 0.01;
-        const r = Math.min(cornerR, lim);
-        const cand = [[0, 3, 0], [0, 1, 1], [2, 1, 2], [2, 3, 3]]; // [sideA, sideB, corner]
-        for (const [sa, sb, c] of cand) {
-          if (t.boundary[sa] && t.boundary[sb] && outer[sa] && outer[sb] && r > 0.2) {
-            const isCornerTile = (c === 0 && t.i === 0 && t.j === 0) || (c === 1 && t.i === cols.length - 1 && t.j === 0) ||
-              (c === 2 && t.i === cols.length - 1 && t.j === rows.length - 1) || (c === 3 && t.i === 0 && t.j === rows.length - 1);
-            if (isCornerTile) t.rounds[c] = r;
-          }
-        }
-      }
     }
-    return tiles;
+    return clipTiles(tiles, clips);
   }
+  // Wandrundungen auf Kacheln verteilen: ganz weggeschnittene Kacheln entfallen,
+  // Zellen mit zu wenig Taschenboden werden massiv
+  function clipTiles(tiles, clips) {
+    if (!Array.isArray(clips) || !clips.length) return tiles;
+    return tiles.filter((t) => {
+      t.clips = clips.filter((c) => clipCuts(c, t.x0, t.y0, t.x1, t.y1));
+      if (!t.clips.length) return true;
+      if (outline(t).length < 3) return false;
+      if (t.pocket) { const F = pocketFloor(t); if (F.length < 3 || polyArea(F) < MIN_POCKET) t.pocket = false; }
+      return true;
+    });
+  }
+  // die vier Wandrundungen im Koordinatensystem des Rasters (Ursprung = vordere linke Ecke von Platten + Leisten).
+  // Wand: Innenmaß mit Eckradius r. Teile halten ringsum das halbe Spiel g Abstand, in der Ecke also
+  // einen Kreis mit Radius r − g um denselben Mittelpunkt (Wandecke + r in beiden Richtungen).
+  function wallClips(AX, AY, W, D, o) {
+    const g = (o.clearance || 0) / 2, r = Math.min(o.cornerR || 0, o.boxW / 2, o.boxD / 2), rho = r - g;
+    if (!(rho > MIN_ROUND)) return [];
+    const xl = -AX.gapLow + r, xh = W + AX.gapHigh - r, yl = -AY.gapLow + r, yh = D + AY.gapHigh - r;
+    return [{ cx: xl, cy: yl, r: rho, q: 0 }, { cx: xh, cy: yl, r: rho, q: 1 }, { cx: xh, cy: yh, r: rho, q: 2 }, { cx: xl, cy: yh, r: rho, q: 3 }];
+  }
+  // Rundungen, die ein Teil (Rechteck) treffen, in dessen eigenen Koordinaten + Kennung für gleiche Teile
+  const localClips = (clips, x0, y0, x1, y1) => clips.filter((c) => clipCuts(c, x0, y0, x1, y1)).map((c) => ({ ...c, cx: c.cx - x0, cy: c.cy - y0 }));
+  const clipKey = (cl) => cl.map((c) => c.q + ':' + c.cx.toFixed(3) + ':' + c.cy.toFixed(3) + ':' + c.r.toFixed(3)).join(';');
+  const moveClips = (cl, dx, dy) => (cl || []).map((c) => ({ ...c, cx: c.cx + dx, cy: c.cy + dy }));
+  const moveTile = (t, dx, dy) => ({ ...t, x0: t.x0 + dx, x1: t.x1 + dx, y0: t.y0 + dy, y1: t.y1 + dy, clips: moveClips(t.clips, dx, dy) });
 
   // Innenmaße, bei denen das Raster ohne Rest aufgeht (keine Leisten nötig): nächstkleineres und nächstgrößeres
   function fitSizes(v, clearance, half) {
@@ -398,27 +513,28 @@ const GF = (() => {
 
   // Platten, Typen, Druckjobs und Leisten aus einer gewählten Aufteilung
   function finish(AX, AY, best, ox, oy, sep, o, bx, by, flatPlace) {
-    const pieces = copiesOf(makePieces(best.sx, best.sy, ox, oy, sep), nCopies(o));
+    const totalW0 = AX.cells.reduce((a, b) => a + b, 0) + AX.mLow + AX.mHigh, totalD0 = AY.cells.reduce((a, b) => a + b, 0) + AY.mLow + AY.mHigh;
+    const clips = wallClips(AX, AY, totalW0, totalD0, o);
+    const pieces = copiesOf(makePieces(best.sx, best.sy, ox, oy, sep).map((p) => ({ ...p, clips: localClips(clips, p.x, p.y, p.x + p.w, p.y + p.d) })), nCopies(o));
     // identical piece types
     const types = new Map();
     for (const p of pieces) {
-      const k = p.key + '#' + p.outer.join('');
+      const k = p.key + '#' + p.outer.join('') + '#' + clipKey(p.clips);
       if (!types.has(k)) types.set(k, { label: String.fromCharCode(65 + types.size), pieces: [], rep: p });
       types.get(k).pieces.push(p);
       p.type = types.get(k);
     }
-    for (const t of types.values()) t.tiles = pieceTiles(t.rep, o.cornerR);
+    for (const t of types.values()) t.tiles = pieceTiles(t.rep, t.rep.clips);
     const stacks = flatPlace
       ? [{ label: 'J1', flat: true, bedRot: Math.abs(flatPlace.W - o.bedX) > 1e-6, bed: { w: flatPlace.W, d: flatPlace.D }, foot: { w: flatPlace.fw, d: flatPlace.fd },
           items: flatPlace.items.map((q) => ({ p: pieces[q.i], rot: q.rot, flip: 0, lv: 0, dx: q.x, dy: q.y })) }]
       : o.stack ? buildStacks(pieces, o) : pieces.map((p, i) => ({ items: [{ p, dx: 0, dy: 0 }], label: 'J' + (i + 1) }));
-    const totalW0 = AX.cells.reduce((a, b) => a + b, 0) + AX.mLow + AX.mHigh, totalD0 = AY.cells.reduce((a, b) => a + b, 0) + AY.mLow + AY.mHigh;
     // spacers: try full-length strips first, split them shorter until they fit next to the plates
     let spacers = { list: [], types: [] }, jobs = packSpacers(stacks.slice(), spacers, bx, by, o);
     if (sep) {
       const L0 = Math.max(bx, by), best = { n: Infinity };
       for (const f of [1, 0.75, 0.6, 0.5, 0.4, 0.34, 0.25]) {
-        const sp = buildSpacers(AX, AY, totalW0, totalD0, L0 * f, o), jb = packSpacers(stacks.map(st => ({ ...st })), sp, bx, by, o);
+        const sp = buildSpacers(AX, AY, totalW0, totalD0, L0 * f, o, clips), jb = packSpacers(stacks.map(st => ({ ...st })), sp, bx, by, o);
         const extra = jb.length - stacks.length;
         if (extra < best.n) { best.n = extra; best.sp = sp; best.jb = jb; }
         if (extra === 0) break;
@@ -501,13 +617,22 @@ const GF = (() => {
   }
   // separate spacer strips around the grid. S/N strips span the full width, W/E strips sit between them
   // ladder frame: two thin rails along the length + cross ribs. local coords, length along x if horiz
-  function spacerTiles(w, h, horiz, rounds, o) {
+  function spacerTiles(w, h, horiz, clips, o) {
     const L = horiz ? w : h, M = horiz ? h : w;
     const rail = Math.max(0.8, o.rail || 1.6), pitch = Math.max(8, o.ribPitch || 30);
-    const ladder = o.spacerStyle !== 'solid' && M - 2 * rail >= 1.5;
+    // Enden, in die eine Wandrundung schneidet, werden massiv (sonst blieben offene Leiter-Enden stehen):
+    // der entfernte Bereich reicht längs der Leiste höchstens bis zum Kreismittelpunkt
+    let eA = 0, eB = 0;
+    for (const c of clips || []) {
+      const ca = horiz ? c.cx : c.cy, low = horiz ? (c.q === 0 || c.q === 3) : c.q < 2;
+      if (low) eA = Math.max(eA, Math.min(L, ca)); else eB = Math.max(eB, Math.min(L, L - ca));
+    }
+    const S = L - eA - eB, rs = eA > 0 ? 0 : 1, re = eB > 0 ? 0 : 1;
+    const ng = Math.max(1, Math.ceil((S - rail) / pitch)), nrib = ng - 1 + rs + re, gapL = (S - nrib * rail) / ng;
+    const ladder = o.spacerStyle !== 'solid' && M - 2 * rail >= 1.5 && gapL >= 1;
     const across = ladder ? [[0, rail, true], [rail, M - rail, false], [M - rail, M, true]] : [[0, M, true]];
     let along;
-    if (ladder) {
+    if (ladder && !eA && !eB) {
       const nr = Math.max(2, Math.ceil((L - rail) / pitch) + 1), gap = (L - nr * rail) / (nr - 1);
       along = [];
       for (let k = 0; k < nr; k++) {
@@ -515,6 +640,15 @@ const GF = (() => {
         along.push([a, a + rail, true]);
         if (k < nr - 1) along.push([a + rail, a + rail + gap, false]);
       }
+    } else if (ladder) {
+      along = []; let x = eA;
+      if (eA > 0) along.push([0, eA, true]);
+      for (let k = 0; k < ng; k++) {
+        if (k > 0 || rs) { along.push([x, x + rail, true]); x += rail; }
+        const e = k === ng - 1 ? L - eB - (re ? rail : 0) : x + gapL;
+        along.push([x, e, false]); x = e;
+      }
+      along.push([x, L, true]);
     } else along = [[0, L, true]];
     // grid[j][i]: j across, i along
     const grid = across.map(([c0, c1, railRow]) => along.map(([a0, a1, rib]) => (railRow || rib) ? (horiz ? { x0: a0, x1: a1, y0: c0, y1: c1 } : { x0: c0, x1: c1, y0: a0, y1: a1 }) : null));
@@ -524,32 +658,19 @@ const GF = (() => {
       const t = grid[j][i]; if (!t) continue;
       // neighbours S,E,N,W in world terms
       const nb = horiz ? [at(j - 1, i), at(j, i + 1), at(j + 1, i), at(j, i - 1)] : [at(j, i - 1), at(j + 1, i), at(j, i + 1), at(j - 1, i)];
-      t.pocket = false; t.boundary = nb.map(n => !n); t.nbPocket = [false, false, false, false]; t.rounds = {};
+      t.pocket = false; t.boundary = nb.map(n => !n); t.nbPocket = [false, false, false, false]; t.rounds = {}; t.clips = [];
       tiles.push(t);
     }
-    // rounded strip corners -> the tile sitting in that corner
-    for (const c of Object.keys(rounds)) {
-      const cx = (c == 1 || c == 2) ? w : 0, cy = (c == 2 || c == 3) ? h : 0;
-      const t = tiles.find(t => Math.abs((cx ? t.x1 : t.x0) - cx) < 1e-6 && Math.abs((cy ? t.y1 : t.y0) - cy) < 1e-6);
-      if (!t) continue;
-      const r = Math.min(rounds[c], t.x1 - t.x0 - 0.01, t.y1 - t.y0 - 0.01);
-      if (r > 0.2 && t.boundary[c == 0 || c == 1 ? 0 : 2] && t.boundary[c == 0 || c == 3 ? 3 : 1]) t.rounds[c] = r;
-    }
-    return tiles;
+    return clipTiles(tiles, clips);
   }
   // separate spacer strips around the grid. S/N strips span the full width, W/E strips sit between them
-  function buildSpacers(AX, AY, W, D, maxLen, o) {
-    const cornerR = o.cornerR, list = [], L = maxLen - 2;
+  function buildSpacers(AX, AY, W, D, maxLen, o, clips = []) {
+    const list = [], L = maxLen - 2;
     const strip = (x0, y0, x1, y1, horiz, roundA, roundB, side) => {
       const len = horiz ? x1 - x0 : y1 - y0, n = Math.max(1, Math.ceil(len / L - 1e-9)), seg = len / n;
       for (let k = 0; k < n; k++) {
         const t = horiz ? { x0: x0 + k * seg, x1: x0 + (k + 1) * seg, y0, y1 } : { x0, x1, y0: y0 + k * seg, y1: y0 + (k + 1) * seg };
-        const rounds = {};
-        if (cornerR > 0.2) {
-          if (k === 0 && roundA) for (const c of roundA) rounds[c] = cornerR;
-          if (k === n - 1 && roundB) for (const c of roundB) rounds[c] = cornerR;
-        }
-        list.push({ ...t, side, horiz, rounds });
+        list.push({ ...t, side, horiz, clips: localClips(clips, t.x0, t.y0, t.x1, t.y1) });
       }
     };
     const s = AY.mLow, n = AY.mHigh, w = AX.mLow, e = AX.mHigh;
@@ -563,8 +684,8 @@ const GF = (() => {
     list.length = 0; list.push(...all);
     for (const sp of list) {
       const w2 = sp.x1 - sp.x0, h2 = sp.y1 - sp.y0;
-      const key = w2.toFixed(2) + 'x' + h2.toFixed(2) + JSON.stringify(sp.rounds);
-      if (!types.has(key)) types.set(key, { label: 'R' + (types.size + 1), items: [], w: w2, d: h2, h: spacerHeight(o), tiles: spacerTiles(w2, h2, sp.horiz, sp.rounds, o) });
+      const key = w2.toFixed(2) + 'x' + h2.toFixed(2) + (sp.horiz ? 'h' : 'v') + clipKey(sp.clips);
+      if (!types.has(key)) types.set(key, { label: 'R' + (types.size + 1), items: [], w: w2, d: h2, h: spacerHeight(o), tiles: spacerTiles(w2, h2, sp.horiz, sp.clips, o) });
       types.get(key).items.push(sp); sp.type = types.get(key);
     }
     return { list, types: [...types.values()] };
@@ -702,9 +823,8 @@ const GF = (() => {
   function rotTiles(tiles, d) {
     const rs = (a) => [a[3], a[0], a[1], a[2]]; // Seiten S,E,N,W
     return tiles.map((t) => {
-      const r = { ...t, x0: d - t.y1, x1: d - t.y0, y0: t.x0, y1: t.x1, boundary: rs(t.boundary), nbPocket: rs(t.nbPocket), rounds: {} };
-      for (const c of Object.keys(t.rounds || {})) r.rounds[(+c + 1) % 4] = t.rounds[c];
-      return r;
+      return { ...t, x0: d - t.y1, x1: d - t.y0, y0: t.x0, y1: t.x1, boundary: rs(t.boundary), nbPocket: rs(t.nbPocket), rounds: {},
+        clips: (t.clips || []).map((c) => ({ ...c, cx: d - c.cy, cy: c.cx, q: (c.q + 1) % 4 })) };
     });
   }
   function stackMeshes(stack, o) {
@@ -719,7 +839,7 @@ const GF = (() => {
         for (let q = 0; q < F.length; q += 3) petg.tri(P(F[q]), P(F[q + 1]), P(F[q + 2]));
         return;
       }
-      const tiles = base.map(t => ({ ...t, x0: t.x0 + it.dx, x1: t.x1 + it.dx, y0: t.y0 + it.dy, y1: t.y1 + it.dy }));
+      const tiles = base.map((t) => moveTile(t, it.dx, it.dy));
       addPlate(pla, tiles, lvk * per);
       if (lvk > 0 && o.sepStyle !== 'flip') {
         if (o.sepStyle === 'sheet') { // one continuous PETG foil over the whole footprint of the upper plate
@@ -932,7 +1052,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, wallClips, clipPoly, outline, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;
