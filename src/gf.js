@@ -48,7 +48,7 @@ const GF = (() => {
     gap: 0.4,     // mm: Z-Abstand zwischen zwei Platten = 2 Schichten à 0,2 mm
     dot: 0.8,     // mm: Punktdurchmesser = 2 Bahnen einer 0,4-mm-Düse
     pitch: 6,     // mm: Punktabstand (42 mm ÷ 7)
-    edge: 0.6,    // mm: Abstand der Punktreihen von den Kanten des Plattenfußes (unter den äußeren Bahnen)
+    edge: 0.6,    // mm: Abstand der äußeren Punktreihen von den Kanten (unter den äußeren Bahnen), einstellbar
     seg: 6,       // Ecken eines Punkts
     margin: 0.3,  // mm: so weit bleibt ein Punktrand von Wandrundungen und Verbindungstaschen weg
   };
@@ -400,7 +400,11 @@ const GF = (() => {
   //   Multimaterial ('petg'): dazwischen eine PETG-Schicht (sepT), die sich vom PLA ablösen lässt
   //   Ein Material ('perf'): alles PLA, dazwischen ein Luftspalt mit Punkten als Sollbruchstellen
   const perfMode = (o) => o.sepStyle === 'perf' && o.stack;
-  const perfOpt = (o) => ({ gap: o.perfGap || PERF.gap, dot: o.perfDot || PERF.dot, pitch: o.perfPitch || PERF.pitch });
+  // Einstellungen der Perforation; der Randabstand ist mindestens ein halber Punkt (sonst ragte der Punkt über die Kante)
+  const perfOpt = (o) => {
+    const dot = o.perfDot || PERF.dot, pitch = o.perfPitch || PERF.pitch;
+    return { gap: o.perfGap || PERF.gap, dot, pitch, ribPitch: o.perfRibPitch || pitch, edge: Math.max(dot / 2, o.perfEdge || PERF.edge) };
+  };
   // zweites Material (PETG) im Spiel? Nur dann braucht es Platz für den Prime-Tower
   const twoMaterials = (o) => !!o.stack && o.sepStyle !== 'perf';
   // Multimaterial: Leisten so hoch wie eine Platte, damit ihre PETG-Schichten auf denselben Höhen liegen wie die der
@@ -1134,12 +1138,13 @@ const GF = (() => {
     return out;
   }
   // liegt ein Punkt (mit Rand m) im Material der Kacheln: im Umriss, nicht in einer Wandrundung, nicht über einer Verbindungstasche
-  function solidAt(tiles, x, y, m) {
+  // face 'top': Auflage auf der Oberseite (dort gibt es keine Verbindungstaschen, die öffnen sich nach unten)
+  function solidAt(tiles, x, y, m, face) {
     for (const t of tiles) {
       if (x < t.x0 - 1e-9 || x > t.x1 + 1e-9 || y < t.y0 - 1e-9 || y > t.y1 + 1e-9) continue;
       let ok = true;
       for (const c of t.clips || []) { const [sx, sy] = clipSign(c.q); if (sx * (x - c.cx) < 0 && sy * (y - c.cy) < 0 && Math.hypot(x - c.cx, y - c.cy) > c.r - m) ok = false; }
-      const F = ok && tileFeat(t);
+      const F = ok && face !== 'top' && tileFeat(t);
       if (F) {
         const C = corners(t), g = connGeo(t.fit);
         F.forEach((f, s) => {
@@ -1157,10 +1162,10 @@ const GF = (() => {
   // 'foot': Plattenfüße liegen aufeinander. Massive Kacheln (Leisten, Ränder) bekommen ein gleichmäßiges Raster.
   // lo: Kacheln der Platte darunter. Ragt sie über eine Außenkante der oberen Platte hinaus, liegt dort unten ein
   // innerer Steg (±0,25 mm um die Kante) statt eines Außenrands: der Punkt rückt dann auf die halbe Randbreite.
-  // Punktlagen längs einer Achse von a bis b: an einer Außenkante (bl/bh) sitzt die äußerste Reihe PERF.edge
+  // Punktlagen längs einer Achse von a bis b: an einer Außenkante (bl/bh) sitzt die äußerste Reihe edge
   // vor der Kante, an einer Innenkante einen halben Abstand davor; Abstand dazwischen höchstens pitch
-  function perfAxis(a, b, bl, bh, pitch) {
-    const lo = a + (bl ? PERF.edge : 0), hi = b - (bh ? PERF.edge : 0), L = hi - lo;
+  function perfAxis(a, b, bl, bh, pitch, edge) {
+    const lo = a + (bl ? edge : 0), hi = b - (bh ? edge : 0), L = hi - lo;
     if (L <= 1e-6) return [(a + b) / 2];
     const n = Math.max(1, Math.ceil(L / pitch - 1e-9));
     if (bl && bh) return Array.from({ length: n + 1 }, (_, k) => lo + k * L / n);
@@ -1177,28 +1182,42 @@ const GF = (() => {
         // massive Kachel: an jeder Außenkante eine Punktreihe (sonst hinge die Kante frei über dem Spalt),
         // dazwischen höchstens im Punktabstand. An Innenkanten liegt die Nachbarkachel mit eigenen Punkten an.
         const B = t.boundary || [true, true, true, true], m = P.dot / 2 + PERF.margin;
-        for (const x of perfAxis(t.x0, t.x1, B[3], B[1], P.pitch)) for (const y of perfAxis(t.y0, t.y1, B[0], B[2], P.pitch)) {
+        for (const x of perfAxis(t.x0, t.x1, B[3], B[1], P.pitch, P.edge)) for (const y of perfAxis(t.y0, t.y1, B[0], B[2], P.pitch, P.edge)) {
           // fällt der Punkt in eine Wandrundung, rückt er auf den Bogen (sonst fehlte dort die Stütze)
           const c = (t.clips || []).find((q) => cutAway([q], x, y, -m));
           if (c) { const d = Math.hypot(x - c.cx, y - c.cy), k = (c.r - m - 0.01) / d; add(c.cx + (x - c.cx) * k, c.cy + (y - c.cy) * k); } else add(x, y);
         }
         continue;
       }
-      const C = corners(t), B = t.boundary, e = T_BOT - PERF.edge;
+      const C = corners(t), B = t.boundary, e = T_BOT - P.edge;
       for (let s = 0; s < 4; s++) {
         const a = C[s], b = C[(s + 1) % 4], L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
         // Reihen: [Abstand von der Kante, Anfang, Ende längs der Kante]
         const out = B[s] && under((a[0] + b[0]) / 2 + uy, (a[1] + b[1]) / 2 - ux); // 1 mm außerhalb der Kante
         const rows = kind === 'top'
           ? [[B[s] ? (out ? TOP / 2 : TOP) : 0, B[(s + 3) % 4] ? TOP : 0, B[(s + 1) % 4] ? TOP : 0]] // Mitte der Stegoberkante
-          : [[e, e, e], ...(B[s] ? [[PERF.edge, PERF.edge, PERF.edge]] : [])];          // an der Taschenkante, am Außenrand
+          : [[e, e, e], ...(B[s] ? [[P.edge, P.edge, P.edge]] : [])];                    // an der Taschenkante, am Außenrand
         for (const [v, u0, u1] of rows) {
-          const n = Math.max(1, Math.round((L - u0 - u1) / P.pitch));
+          const n = Math.max(1, Math.ceil((L - u0 - u1) / P.ribPitch - 1e-9)); // Abstand höchstens ribPitch
           for (let k = 0; k <= n; k++) { const u = u0 + k * (L - u0 - u1) / n; add(a[0] + u * ux - v * uy, a[1] + u * uy + v * ux); }
         }
+        if (kind === 'foot') sockDots(t, P, add);
       }
     }
+    // auch die Taschen der Platte darunter (ihre Unterseite liegt oben, wenn sie kopfüber liegt)
+    if (kind === 'foot' && lo) for (const t of lo) if (t.pocket) sockDots(t, P, add);
     return [...pts.values()];
+  }
+  // Verbindungstasche (öffnet sich nach unten): auf der Fußseite fallen dort Punkte weg, deshalb rings um die
+  // Tasche zusätzliche Punkte, damit das Material neben und hinter ihr nicht frei hängt
+  function sockDots(t, P, add) {
+    const F = tileFeat(t); if (!F) return;
+    const C = corners(t), g = connGeo(t.fit), m = P.dot / 2 + PERF.margin + 0.01, side = CONN.neck / 2 + g.D * g.tan + m;
+    F.forEach((f, s) => {
+      if (!f || f.kind !== 2) return;
+      const a = C[s], b = C[(s + 1) % 4], L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L, uc = L / 2;
+      for (const [u, v] of [[uc - side, P.edge], [uc + side, P.edge], [uc - side, g.D + m], [uc + side, g.D + m], [uc, g.D + m]]) add(a[0] + u * ux - v * uy, a[1] + u * uy + v * ux);
+    });
   }
   // alle Punkte eines Druckjobs: [x, y, z unten, z oben]
   function perfList(stack, o) {
@@ -1207,7 +1226,8 @@ const GF = (() => {
     let lo = null;
     stack.items.forEach((it, k) => {
       const up = itemTiles(it), lvk = it.lv ?? k;
-      if (lvk > 0 && lo) for (const [x, y] of perfPoints(up, it.flip ? 'top' : 'foot', P, lo)) if (solidAt(up, x, y, m) && solidAt(lo, x, y, m)) out.push([x, y, (lvk - 1) * per + H, lvk * per]);
+      const face = it.flip ? 'top' : 'foot';
+      if (lvk > 0 && lo) for (const [x, y] of perfPoints(up, face, P, lo)) if (solidAt(up, x, y, m, face) && solidAt(lo, x, y, m, face)) out.push([x, y, (lvk - 1) * per + H, lvk * per]);
       lo = up;
     });
     const sh = spacerHeight(o), perS = sh + P.gap, placed = spacerPlaced;
@@ -1457,7 +1477,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PRINTERS, printerOf, applyPrinter, printerFor, printArea, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, spacerPlaced, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, halfRoom, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PRINTERS, printerOf, applyPrinter, printerFor, printArea, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, spacerPlaced, solidAt, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, halfRoom, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;

@@ -133,7 +133,8 @@
     ['minSpacer', 'Mindestbreite Leiste (mm)', 0, 42], ['spacerH', 'Leistenhöhe (mm)', 0.6, 4.4], ['rail', 'Schiene (mm)', 0.8, 20], ['ribPitch', 'Streben alle (mm)', 8, 500],
     ['bedX', 'Bett X (mm)', 50, 1000], ['bedY', 'Bett Y (mm)', 50, 1000], ['bedZ', 'Höhe Z (mm)', 10, 1000],
     ['connFit', 'Spiel Verbindung (mm)', 0, 0.5],
-    ['perfPitch', 'Perforation: Punktabstand (mm)', 2, 30], ['perfDot', 'Perforation: Punkt-Ø (mm)', 0.4, 3], ['perfGap', 'Perforation: Z-Abstand (mm)', 0.1, 1.2],
+    ['perfRibPitch', 'Perforation: Abstand auf Stegen (mm)', 2, 30], ['perfPitch', 'Perforation: Abstand auf Flächen (mm)', 2, 30], ['perfEdge', 'Perforation: Randabstand (mm)', 0.2, 3],
+    ['perfDot', 'Perforation: Punkt-Ø (mm)', 0.4, 3], ['perfGap', 'Perforation: Z-Abstand (mm)', 0.1, 1.2],
     ['sepT', 'PETG-Zwischenschicht (mm)', 0.1, 5], ['maxStack', 'Max. Platten je Stapel', 1, 100], ['towerReserve', 'Platz Prime-Tower (mm)', 0, 200],
   ];
 </script>

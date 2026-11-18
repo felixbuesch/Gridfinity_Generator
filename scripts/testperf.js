@@ -46,7 +46,7 @@ const write = (name, pla, perf) => {
 let pla = new GF.Mesh(), perf = new GF.Mesh();
 const info = [];
 PITCHES.forEach((pitch, i) => {
-  const m = stack(2, { perfPitch: pitch }), dx = (i % 2) * (p.w + GAP), dy = Math.floor(i / 2) * (p.d + GAP) + 1.5;
+  const m = stack(2, { perfPitch: pitch, perfRibPitch: pitch }), dx = (i % 2) * (p.w + GAP), dy = Math.floor(i / 2) * (p.d + GAP) + 1.5;
   pla = GF.concat(pla, GF.concat(moved(m.pla, dx, dy), moved(bumps(i + 1), dx, dy)));
   perf = GF.concat(perf, moved(m.perf, dx, dy));
   info.push(`  Stapel ${i + 1} (${i + 1} Noppe${i ? 'n' : ''}, ${['vorne links', 'vorne rechts', 'hinten links', 'hinten rechts'][i]}): Punktabstand ${pitch} mm, ${m.perf.f.length / 20} Punkte`);
@@ -75,7 +75,7 @@ writeFileSync(new URL('LIESMICH_Perforation.txt', dir), [
   `  Ein Stapel aus drei Platten mit ${P.pitch} mm Punktabstand: aufrecht, kopfüber, aufrecht.`,
   '  Enthält zusätzlich die Fuge „Fuß auf Fuß“ (zwischen Platte 2 und 3). Das ist die kritischere Fuge,',
   '  weil die Fläche größer ist. Prüfen: Löst sich Platte 3? Wie rau ist ihre Unterseite?', '',
-  'Den besten Punktabstand danach im Planer unter Profi-Einstellungen eintragen.',
+  'Den besten Punktabstand danach im Planer unter Profi-Einstellungen bei „Perforation: Abstand auf Stegen“ eintragen.',
   'Klebt es zu fest: Z-Abstand 0,6 mm oder größerer Punktabstand. Löst es sich im Druck: kleinerer Abstand oder Punkte 1,0 mm.',
 ].join('\r\n'));
 console.log(info.join('\n'));

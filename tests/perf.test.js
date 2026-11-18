@@ -97,7 +97,7 @@ describe('Perforation: Einstellwerte', () => {
   const count = (x) => GF.perfList(GF.compute({ ...o, ...x }).stacks.find((q) => q.items.length > 1), { ...o, ...x }).length;
 
   it('Standardwerte: 0,4 mm Z-Abstand, 0,8 mm Punkte, 6 mm Abstand', () => {
-    expect(GF.perfOpt({})).toEqual({ gap: 0.4, dot: 0.8, pitch: 6 });
+    expect(GF.perfOpt({})).toEqual({ gap: 0.4, dot: 0.8, pitch: 6, ribPitch: 6, edge: 0.6 });
     // Z-Abstand und Plattenhöhe sind Vielfache von 0,2 mm Schichthöhe
     expect(Math.abs(GF.H / 0.2 - Math.round(GF.H / 0.2))).toBeLessThan(1e-9);
     expect(Math.abs(GF.PERF.gap / 0.2 - Math.round(GF.PERF.gap / 0.2))).toBeLessThan(1e-9);
@@ -141,13 +141,14 @@ describe('Perforation: Einstellwerte', () => {
     const [below, above] = supported(chk(m.pla, 'Leisten'), d);
     expect(below).toBeGreaterThan(0.999); expect(above).toBeGreaterThan(0.999);
   });
-  it('keine Punkte über Verbindungstaschen', () => {
+  it('keine Punkte über Verbindungstaschen (die öffnen sich nach unten: nur Fugen Fuß auf Fuß)', () => {
     const o2 = { ...o, boxW: 600, boxD: 450, connect: 'bridges' }, R2 = GF.compute(o2);
     let n = 0;
     for (const st of R2.stacks) {
       const tiles = st.items.map((it) => GF.itemTiles(it));
       for (const [x, y, z0] of GF.perfList({ ...st, spacers: [] }, o2)) {
         const lv = Math.round((z0 - GF.H) / (GF.H + GF.PERF.gap));
+        if (st.items[lv + 1].flip) continue; // Stegoberkante auf Stegoberkante: dort ist keine Tasche
         for (const T of [tiles[lv], tiles[lv + 1]]) for (const t of T) {
           if (!t.feat || x < t.x0 || x > t.x1 || y < t.y0 || y > t.y1) continue;
           t.feat.forEach((k, sd) => {
@@ -228,4 +229,52 @@ describe('Perforation: nichts kragt über dem Luftspalt aus (massive Teile)', ()
       expect(checked).toBeGreaterThan(0);
     });
   }
+});
+
+describe('Perforation: Plattenfugen ohne frei hängende Stellen, auch mit Verbindungen', () => {
+  for (const connect of ['none', 'tabs', 'bridges']) for (const extra of [{}, { perfRibPitch: 10, perfEdge: 1 }]) {
+    it(`${connect} ${JSON.stringify(extra)}`, () => {
+      const o = { ...BASE, boxW: 450, boxD: 330, connect, connFit: 0.15, ...extra }, R = GF.compute(o), P = GF.perfOpt(o);
+      let checked = 0;
+      for (const s of R.stacks) {
+        const dots = GF.perfList(s, o);
+        for (let k = 1; k < s.items.length; k++) {
+          const up = GF.itemTiles(s.items[k]), lo = GF.itemTiles(s.items[k - 1]), face = s.items[k].flip ? 'top' : 'foot', z = (s.items[k].lv ?? k) * (GF.H + P.gap);
+          const band = face === 'top' ? 0.25 : 2.85; // Stegoberkante bzw. Fuß
+          const inside = (T, x, y) => T.some((t) => x > t.x0 && x < t.x1 && y > t.y0 && y < t.y1);
+          for (const t of up) {
+            if (!t.pocket) continue;
+            for (let x = t.x0 + 0.1; x < t.x1; x += 0.7) for (let y = t.y0 + 0.1; y < t.y1; y += 0.7) {
+              if (Math.min(x - t.x0, t.x1 - x, y - t.y0, t.y1 - y) > band || !inside(lo, x, y)) continue;
+              if (!GF.solidAt(up, x, y, 0, face) || !GF.solidAt(lo, x, y, 0, face)) continue;
+              const near = dots.filter((q) => Math.abs(q[3] - z) < 1e-6 && Math.hypot(q[0] - x, q[1] - y) < Math.max(P.ribPitch, P.pitch) * 1.6).map((q) => [q[0], q[1]]);
+              // höchstens 1,2 mm: nur neben Verbindungstaschen bleibt ein schmaler Rand (Punkte halten Abstand zur Tasche)
+              expect(distToHull([x, y], hull(near)), `${s.label} Ebene ${k + 1} ${face} bei ${x.toFixed(1)}/${y.toFixed(1)}`).toBeLessThanOrEqual(Math.max(connect === 'none' ? 1.0 : 1.2, P.edge * Math.SQRT2 + 0.05)); // Ecke: Randabstand diagonal
+              checked++;
+            }
+          }
+        }
+      }
+      expect(checked).toBeGreaterThan(100);
+    });
+  }
+  it('Randabstand und Abstand auf den Stegen wirken', () => {
+    const o = { ...BASE, boxW: 450, boxD: 330 }, R = GF.compute(o), s = R.stacks[0];
+    const n = (x) => GF.perfList(s, { ...o, ...x }).length;
+    expect(n({ perfRibPitch: 12 })).toBeLessThan(n({}));
+    expect(n({ perfRibPitch: 3 })).toBeGreaterThan(n({}));
+    // unter massiven Leisten: äußerste Reihe genau im Randabstand
+    const o3 = { ...o, spacerStyle: 'solid' }, s3 = GF.compute(o3).stacks[0];
+    const edgeDist = (x) => {
+      const oo = { ...o3, ...x }, D = GF.perfList(s3, oo); let best = Infinity;
+      for (const e of s3.spacers) if (e.level) for (const t of GF.spacerPlaced(e)) for (const q of D) {
+        if (q[0] < t.x0 || q[0] > t.x1 || q[1] < t.y0 || q[1] > t.y1 || (t.clips || []).length) continue;
+        best = Math.min(best, ...[q[0] - t.x0, t.x1 - q[0], q[1] - t.y0, t.y1 - q[1]].filter((v, i) => t.boundary[[3, 1, 0, 2][i]]));
+      }
+      return best;
+    };
+    expect(edgeDist({})).toBeCloseTo(0.6, 6);
+    expect(edgeDist({ perfEdge: 1.5 })).toBeCloseTo(1.5, 6);
+    expect(GF.perfOpt({ ...o, perfEdge: 0.1, perfDot: 1 }).edge).toBe(0.5); // nie weniger als ein halber Punkt
+  });
 });

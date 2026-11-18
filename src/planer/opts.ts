@@ -8,7 +8,7 @@ export interface Opts {
   spacers: 'separate' | 'integrated'; spacerStyle: 'ladder' | 'solid'; alignX: Align; alignY: Align;
   spacerH: number; rail: number; ribPitch: number; bedX: number; bedY: number; bedZ: number;
   printer: string; connect: 'none' | 'tabs' | 'bridges'; connFit: number;
-  copies: number; stack: boolean; sepStyle: 'petg' | 'perf'; perfGap: number; perfDot: number; perfPitch: number; sepT: number; overhang: number; maxStack: number; towerReserve: number;
+  copies: number; stack: boolean; sepStyle: 'petg' | 'perf'; perfGap: number; perfDot: number; perfPitch: number; perfRibPitch: number; perfEdge: number; sepT: number; overhang: number; maxStack: number; towerReserve: number;
 }
 
 export const defaults = (): Opts => ({ ...(DEFAULTS as Opts) });
@@ -45,6 +45,7 @@ export function clean(o: Opts) {
   c.spacerH = lim(c.spacerH, 0.6, 4.4); // höher als die Platte stört die Boxen
   c.connFit = lim(c.connFit, 0, 0.5);
   c.perfGap = lim(c.perfGap, 0.1, 1.2); c.perfDot = lim(c.perfDot, 0.4, 3); c.perfPitch = lim(c.perfPitch, 2, 30);
+  c.perfRibPitch = lim(c.perfRibPitch, 2, 30); c.perfEdge = lim(c.perfEdge, 0.2, 3);
   if (!['none', 'tabs', 'bridges'].includes(c.connect)) c.connect = 'none';
   c.rail = lim(c.rail, 0.8, 20); c.ribPitch = lim(c.ribPitch, 8, 500);
   // ältere Trennarten (Stegspitze, Wendeplatte, Netz, Folie) gibt es nicht mehr: sie werden zur PETG-Zwischenschicht
@@ -91,7 +92,9 @@ export const TIPS: Record<string, string> = {
   petg: 'Multimaterial (PETG-Trennschicht): zwischen zwei Platten liegt eine dünne PETG-Schicht, die kaum am PLA haftet. Jede zweite Platte liegt kopfüber, so liegen immer gleiche Flächen aufeinander (Füße auf Füßen, Stege auf Stegen). Braucht AMS oder zwei Düsen und einen Prime-Tower.',
   perfGap: 'Luftspalt zwischen zwei Platten. Muss ein Vielfaches der Schichthöhe sein: 0,4 mm sind zwei Schichten à 0,2 mm. Größer löst sich leichter, die Unterseite wird aber rauer.',
   perfDot: 'Durchmesser der Punkte. 0,8 mm sind zwei Bahnen einer 0,4-mm-Düse. Kleiner druckt der Slicer nicht sicher, größer hält fester.',
-  perfPitch: 'Abstand der Punkte. Wird je Zelle auf einen gleichmäßigen Teiler gerundet. Kleiner stützt besser und hält fester, größer löst sich leichter.',
+  perfPitch: 'Größter Abstand der Punkte unter massiven Teilen (Leisten, massive Ränder). Kleiner stützt besser und hält fester, größer löst sich leichter.',
+  perfRibPitch: 'Größter Abstand der Punkte entlang der Stege der Grundplatten. Kleiner stützt besser und hält fester, größer löst sich leichter.',
+  perfEdge: 'Abstand der äußeren Punktreihe von der Kante. An jeder Außenkante sitzt eine Reihe, damit nichts frei über dem Spalt hängt. Mindestens ein halber Punktdurchmesser.',
   printer: 'Dein Drucker. Bestimmt die Bettgröße und damit, wie die Platten geteilt werden, ob gestapelt oder flach gedruckt wird und wie die Dateien auf dem Bett liegen. „Eigener Drucker“: Bettmaße selbst eintragen.',
   toIntro: 'Zurück zur Auswahl Schreibtisch, Schublade oder Box.',
   fit: 'Bei diesen Innenmaßen geht das Raster genau auf und es braucht keine Leisten: ↓ das nächstkleinere Maß, ↑ das nächstgrößere (eine Reihe mehr). Klick übernimmt das Maß.',
