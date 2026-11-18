@@ -73,7 +73,7 @@ export const TIPS: Record<string, string> = {
   spacers: 'Separate Leisten: eigene dünne Teile am Rand, die Platten bleiben gleich groß und lassen sich gut stapeln. Integriert: der Rand wird fest an die Randplatten angedruckt.',
   pos: 'Wähle, an welcher Wand oder Ecke das Raster anliegt. Der Rest wird auf der Gegenseite mit Leisten aufgefüllt.',
   minSpacer: 'Ist der Rest schmaler als dieser Wert, wird keine Leiste gedruckt und es bleibt ein Spalt.',
-  half: 'Passt am Rand noch eine halbe Zelle (21 mm), wird eine halbe Reihe statt einer breiten Leiste eingesetzt.',
+  half: 'Erscheint nur, wenn neben den vollen Zellen noch mindestens 21 mm frei sind. Dann kommt dort eine halbe Reihe hin, der Rest wird mit Leisten aufgefüllt. Die halbe Reihe liegt auf der Seite gegenüber der gewählten Wand, deshalb gibt es dann kein „mittig“.',
   spacerStyle: 'Leiter: zwei dünne Schienen mit Querstreben, sehr wenig Material. Voll: massiver Streifen.',
   spacerH: 'Höhe der Leisten, 0,6 bis 4,4 mm. Sie müssen nicht so hoch wie die Platten sein (4,4 mm), weil sie nur seitlich anliegen.',
   rail: 'Breite der beiden Längsschienen einer Leiter-Leiste. 1,2 mm sind drei Bahnen mit 0,4-mm-Düse.',

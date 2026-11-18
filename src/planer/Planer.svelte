@@ -72,6 +72,10 @@
   // nächstkleineres / nächstgrößeres Maß, bei dem das Raster ohne Leisten aufgeht
   const fitW = $derived(GF.fitSizes(Number(o.boxW) || 0, isDesk ? 0 : Number(o.clearance) || 0, o.half));
   const fitD = $derived(GF.fitSizes(Number(o.boxD) || 0, isDesk ? 0 : Number(o.clearance) || 0, o.half));
+  // halbe Zelle nur anbieten, wo daneben noch 21 mm frei sind; dort ergibt „mittig“ keinen Sinn mehr
+  const halfX = $derived(GF.halfRoom(o.boxW, isDesk ? 0 : o.clearance)), halfY = $derived(GF.halfRoom(o.boxD, isDesk ? 0 : o.clearance));
+  const useHalfX = $derived(o.half && halfX), useHalfY = $derived(o.half && halfY);
+  $effect(() => { if (useHalfX && o.alignX === 'center') o.alignX = 'start'; if (useHalfY && o.alignY === 'center') o.alignY = 'start'; });
   const marg = $derived(R.error ? '' : `links ${fmt(R.AX.mLow + R.AX.gapLow, 1)} · rechts ${fmt(R.AX.mHigh + R.AX.gapHigh, 1)} · vorne ${fmt(R.AY.mLow + R.AY.gapLow, 1)} · hinten ${fmt(R.AY.mHigh + R.AY.gapHigh, 1)} mm`);
   const POS: [Align, Align, string][] = [
     ['start', 'end', 'hinten links'], ['center', 'end', 'hinten mittig'], ['end', 'end', 'hinten rechts'],
@@ -186,12 +190,15 @@
         <div class="posrow">
           <div class="pos" role="group" aria-label="Position des Rasters" data-tip={TIPS.pos}>
             {#each POS as [x, y, l]}
-              <button type="button" aria-label={l} aria-pressed={o.alignX === x && o.alignY === y} onclick={() => { o.alignX = x; o.alignY = y; }}></button>
+              {@const off = (useHalfX && x === 'center') || (useHalfY && y === 'center')}
+              <button type="button" aria-label={off ? `${l} (nicht mit halben Zellen)` : l} aria-pressed={o.alignX === x && o.alignY === y} disabled={off} onclick={() => { o.alignX = x; o.alignY = y; }}></button>
             {/each}
           </div>
           <div><span class="lbl">Raster liegt an</span><b>{posText(o.alignX, o.alignY)}</b><span class="lbl">{isDesk ? 'Der Rest bleibt frei.' : 'Leisten füllen die Gegenseite.'}</span></div>
         </div>
-        <label class="tog" data-tip={TIPS.half}><input type="checkbox" bind:checked={o.half}> Halbe Zellen (21 mm) am Rand</label>
+        {#if halfX || halfY}
+          <label class="tog" data-tip={TIPS.half}><input type="checkbox" bind:checked={o.half}> Halbe Zellen (21 mm) am Rand</label>
+        {/if}
         {#if !isDesk}
           <div class="f" data-tip={TIPS.spacers}>Abstandshalter
             <div class="seg">
@@ -418,7 +425,8 @@
   .lbl { font-size: 12.5px; color: var(--muted); }
   .pos { display: grid; grid-template-columns: repeat(3, 30px); grid-template-rows: repeat(3, 30px); gap: 5px; padding: 7px; border: 2px solid rgba(255,255,255,.35); border-radius: 8px; flex: none; }
   .pos button { border: 1px solid var(--line); background: rgba(255,255,255,.05); border-radius: 5px; cursor: pointer; padding: 0; transition: background .2s; }
-  .pos button:hover { background: rgba(242,166,90,.25); }
+  .pos button:hover:not(:disabled) { background: rgba(242,166,90,.25); }
+  .pos button:disabled { opacity: .25; cursor: not-allowed; }
   .pos button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 14px rgba(242,166,90,.5); }
   .stats { display: flex; gap: 8px; flex-wrap: wrap; }
   .stats div { flex: 1 1 70px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); border-radius: 10px; padding: 8px 10px; }

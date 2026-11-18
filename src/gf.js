@@ -415,7 +415,8 @@ const GF = (() => {
     const n = Math.max(0, Math.floor((U + 1e-9) / PITCH));
     const cells = Array(n).fill(PITCH);
     let rem = U - n * PITCH;
-    if (half && rem >= PITCH / 2 - 1e-9) { align === 'end' ? cells.unshift(PITCH / 2) : cells.push(PITCH / 2); rem -= PITCH / 2; }
+    // mit halber Zelle sitzt der Rest immer auf einer Seite: „mittig“ gibt es dann nicht (wird zu Anfang)
+    if (half && rem >= PITCH / 2 - 1e-9) { if (align === 'center') align = 'start'; align === 'end' ? cells.unshift(PITCH / 2) : cells.push(PITCH / 2); rem -= PITCH / 2; }
     let mLow = align === 'center' ? rem / 2 : align === 'end' ? rem : 0, mHigh = align === 'center' ? rem / 2 : align === 'end' ? 0 : rem;
     const gapLow = mLow < minSpacer ? mLow : 0, gapHigh = mHigh < minSpacer ? mHigh : 0;
     if (mLow < minSpacer) mLow = 0;
@@ -424,6 +425,11 @@ const GF = (() => {
     return { inner, U, cells, mLow: round2(mLow), mHigh: round2(mHigh), gapLow: round2(gapLow + clearance / 2), gapHigh: round2(gapHigh + clearance / 2) };
   }
   const round2 = (x) => Math.round(x * 100) / 100;
+  // passt neben die vollen Zellen noch eine halbe (21 mm)? Nur dann gibt es die Wahl „halbe Zellen“
+  const halfRoom = (inner, clearance) => {
+    const U = (Number(inner) || 0) - (Number(clearance) || 0), n = Math.floor((U + 1e-9) / PITCH);
+    return n > 0 && U - n * PITCH >= PITCH / 2 - 1e-9;
+  };
 
   // split an axis into groups each <= L, minimal count, as even as possible
   function splitAxis(ax, L) {
@@ -1325,7 +1331,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PRINTERS, printerOf, applyPrinter, printerFor, printArea, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PRINTERS, printerOf, applyPrinter, printerFor, printArea, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, halfRoom, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;
