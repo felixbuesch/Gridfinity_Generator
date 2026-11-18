@@ -102,7 +102,7 @@ describe('Leisten im Turm: gewendet, damit die Rundungen übereinander liegen', 
 });
 
 describe('Mehrfarbig: Leistentürme nicht höher als der Plattenstapel daneben (kleiner Prime-Tower)', () => {
-  for (const [w, d, bed] of [[523.5, 287.2, 256], [400, 300, 256], [600, 450, 180], [1150, 560, 256], [300, 200, 256]]) {
+  for (const [w, d, bed] of [[400, 300, 256], [600, 450, 180], [1150, 560, 256], [300, 200, 256]]) {
     it(`${w} × ${d}, Bett ${bed}`, () => {
       const o = { ...BASE, boxW: w, boxD: d, bedX: bed, bedY: bed }, R = GF.compute(o);
       expect(R.error).toBeUndefined();
@@ -117,3 +117,21 @@ describe('Mehrfarbig: Leistentürme nicht höher als der Plattenstapel daneben (
     });
   }
 });
+
+describe('Turm-Grenze macht nie ein zusätzliches Leisten-Bett auf', () => {
+  it('über viele Schubladen, Drucker und Radien: gleich viele Druckjobs wie ohne Grenze', () => {
+    let n = 0, capped = 0;
+    for (const w of [300, 350, 400, 452, 523.5, 600]) for (const d of [200, 250, 300, 340, 420]) for (const bed of [180, 235, 256]) for (const r of [0, 15]) {
+      const o = { ...BASE, boxW: w, boxD: d, bedX: bed, bedY: 256, bedZ: 256, cornerR: r }, R = GF.compute(o), R0 = GF.compute({ ...o, _noTowerCap: true });
+      if (R.error) continue;
+      n++;
+      expect(R.stacks.length, `${w} × ${d}, Bett ${bed}, Radius ${r}`).toBe(R0.stacks.length);
+      expect(R.stacks.reduce((a, s) => a + s.spacers.length, 0)).toBe(R.spacers.list.length);
+      const h = (RR) => Math.max(...RR.stacks.map((s) => GF.stackInfo({ ...s, items: [] }, o).height));
+      if (h(R) < h(R0) - 1e-6) capped++;
+    }
+    expect(n).toBeGreaterThan(100);
+    expect(capped).toBeGreaterThan(0); // die Grenze greift tatsächlich irgendwo
+  });
+});
+

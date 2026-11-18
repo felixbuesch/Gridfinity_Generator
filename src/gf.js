@@ -961,7 +961,16 @@ const GF = (() => {
   }
 
   // put spacer strips into the free area of the plate beds; leftovers get their own bed(s)
+  // Mehrfarbig wird einmal mit und einmal ohne Turm-Grenze gepackt: die Grenze gilt nur, wenn sie keinen
+  // zusätzlichen Druckjob (eigenes Leisten-Bett) kostet
   function packSpacers(stacks, spacers, BX, BY, o, bridges) {
+    const run = (useCap) => packOnce(stacks.map((st) => ({ ...st })), spacers, BX, BY, o, bridges, useCap);
+    let jobs = run(true);
+    if (twoMaterials(o)) { const free = run(false); if (free.length < jobs.length) jobs = free; }
+    for (const st of jobs) for (const e of st.spacers.concat(st.bridges)) e.sp.job = st;
+    return jobs;
+  }
+  function packOnce(stacks, spacers, BX, BY, o, bridges, useCap) {
     const g = 3;
     stacks.forEach(st => {
       st.spacers = []; st.bridges = [];
@@ -1006,16 +1015,19 @@ const GF = (() => {
         const a = lane.used; lane.used += L + g;
         // strip long axis along the region's long axis
         const x = alongY ? r.x + lane.off : r.x + a, y = alongY ? r.y + a : r.y + lane.off;
-        let below = null;
-        tw.forEach((q, level) => {
-          const longX = (q.x1 - q.x0) >= (q.y1 - q.y0), rot = longX !== !alongY;
-          const e = { sp: q, x, y, rot, level, tf: 0 };
-          if (below && !tw.key) e.tf = bestTf(e, below);
-          st[tw.key || 'spacers'].push(e); below = e;
-        });
-        return true;
+        return addTower(st, tw, x, y, alongY, 0, null);
       }
-      return false;
+      return null;
+    };
+    // Leisten als Turm an (x, y) ab Ebene level0 auf below setzen; Ergebnis: oberste Leiste
+    const addTower = (st, tw, x, y, alongY, level0, below) => {
+      tw.forEach((q, k) => {
+        const longX = (q.x1 - q.x0) >= (q.y1 - q.y0), rot = longX !== !alongY;
+        const e = { sp: q, x, y, rot, level: level0 + k, tf: 0, alongY };
+        if (below && !tw.key) e.tf = bestTf(e, below);
+        st[tw.key || 'spacers'].push(e); below = e;
+      });
+      return below;
     };
     // towers: equal strips stacked on top of each other (PETG layer between) when stack printing is on
     const towers = [], perT = spacerHeight(o) + spacerGap(o);
@@ -1038,27 +1050,29 @@ const GF = (() => {
     // Mehrfarbig: ein Leistenturm neben einem Plattenstapel darf nicht höher sein als der Stapel, sonst muss
     // der Prime-Tower (Abfall) nur wegen der Leisten weiter wachsen. Zu hohe Türme werden geteilt.
     const cap = (st) => {
-      if (!twoMaterials(o) || !st.items || !st.items.length) return Infinity;
+      if (!useCap || !twoMaterials(o) || !st.items || !st.items.length || o._noTowerCap) return Infinity; // _noTowerCap: nur für Tests
       const nl = st.items.reduce((a, it, k) => Math.max(a, (it.lv ?? k) + 1), 0), hp = nl * H + (nl - 1) * sepGap(o);
       return Math.max(1, Math.floor((hp - spacerHeight(o)) / perT + 1e-9) + 1);
     };
     const left = [];
     for (const tw0 of order) {
       if (tw0.key) { if (!stacks.some((st) => fit(st, tw0))) left.push(tw0); continue; } // Brücken
-      let tw = tw0;
+      let tw = tw0, last = null;
       for (const st of stacks) {
         while (tw.length) { // so viele Ebenen, wie neben diesen Stapel passen; der Rest daneben oder woanders
-          const part = tw.slice(0, Math.min(cap(st), tw.length));
-          if (!fit(st, part)) break;
-          tw = tw.slice(part.length);
+          const part = tw.slice(0, Math.min(cap(st), tw.length)), top = fit(st, part);
+          if (!top) break;
+          last = { st, top }; tw = tw.slice(part.length);
         }
         if (!tw.length) break;
       }
+      // Rest findet keinen eigenen Platz: lieber den Turm höher machen als ein eigenes Leisten-Bett (ein Druckjob mehr)
+      if (tw.length && last) { addTower(last.st, tw, last.top.x, last.top.y, last.top.alongY, last.top.level + 1, last.top); tw = []; }
       if (tw.length) left.push(tw);
     }
     while (left.length) { // own beds for what did not fit
       const st = { items: [], spacers: [], bridges: [], bed: { w: BX, d: BY }, regions: [{ x: 0, y: 0, W: BX, H: BY, lanes: [] }], label: 'L' };
-      const rest = left.filter(tw => !fit(st, tw));
+      const rest = left.filter((tw) => !fit(st, tw));
       if (rest.length === left.length) break; // cannot place (should not happen)
       stacks.push(st); left.splice(0, left.length, ...rest);
     }
