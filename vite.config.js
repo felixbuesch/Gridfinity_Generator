@@ -8,5 +8,6 @@ export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [svelte(), ...(mode === 'single' ? [viteSingleFile()] : [])],
   build: { target: 'es2020', outDir: mode === 'single' ? 'dist-single' : 'dist', chunkSizeWarningLimit: 1500 },
-  test: { include: ['tests/**/*.test.js'] },
+  // Geometrie-Tests (Manifold, Perforation) brauchen auf den GitHub-Rechnern teils über 5 s
+  test: { include: ['tests/**/*.test.js'], testTimeout: 60000 },
 }));
