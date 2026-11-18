@@ -1157,14 +1157,31 @@ const GF = (() => {
   // 'foot': Plattenfüße liegen aufeinander. Massive Kacheln (Leisten, Ränder) bekommen ein gleichmäßiges Raster.
   // lo: Kacheln der Platte darunter. Ragt sie über eine Außenkante der oberen Platte hinaus, liegt dort unten ein
   // innerer Steg (±0,25 mm um die Kante) statt eines Außenrands: der Punkt rückt dann auf die halbe Randbreite.
+  // Punktlagen längs einer Achse von a bis b: an einer Außenkante (bl/bh) sitzt die äußerste Reihe PERF.edge
+  // vor der Kante, an einer Innenkante einen halben Abstand davor; Abstand dazwischen höchstens pitch
+  function perfAxis(a, b, bl, bh, pitch) {
+    const lo = a + (bl ? PERF.edge : 0), hi = b - (bh ? PERF.edge : 0), L = hi - lo;
+    if (L <= 1e-6) return [(a + b) / 2];
+    const n = Math.max(1, Math.ceil(L / pitch - 1e-9));
+    if (bl && bh) return Array.from({ length: n + 1 }, (_, k) => lo + k * L / n);
+    if (!bl && !bh) { const m = Math.max(1, Math.round(L / pitch)); return Array.from({ length: m }, (_, k) => lo + (k + 0.5) * L / m); }
+    const st = L / (n + 0.5); // eine Seite außen: von dort aus, zur Innenkante bleibt ein halber Abstand
+    return Array.from({ length: n + 1 }, (_, k) => (bl ? lo + k * st : hi - k * st));
+  }
   function perfPoints(tiles, kind, P, lo) {
     const under = (x, y) => !!lo && lo.some((t) => x > t.x0 && x < t.x1 && y > t.y0 && y < t.y1);
     const pts = new Map(), add = (x, y) => pts.set(Math.round(x * 1e3) + ',' + Math.round(y * 1e3), [x, y]);
     for (const t of tiles) {
       const w = t.x1 - t.x0, d = t.y1 - t.y0;
       if (!t.pocket) {
-        const nx = Math.max(1, Math.round(w / P.pitch)), ny = Math.max(1, Math.round(d / P.pitch));
-        for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) add(t.x0 + (i + 0.5) * w / nx, t.y0 + (j + 0.5) * d / ny);
+        // massive Kachel: an jeder Außenkante eine Punktreihe (sonst hinge die Kante frei über dem Spalt),
+        // dazwischen höchstens im Punktabstand. An Innenkanten liegt die Nachbarkachel mit eigenen Punkten an.
+        const B = t.boundary || [true, true, true, true], m = P.dot / 2 + PERF.margin;
+        for (const x of perfAxis(t.x0, t.x1, B[3], B[1], P.pitch)) for (const y of perfAxis(t.y0, t.y1, B[0], B[2], P.pitch)) {
+          // fällt der Punkt in eine Wandrundung, rückt er auf den Bogen (sonst fehlte dort die Stütze)
+          const c = (t.clips || []).find((q) => cutAway([q], x, y, -m));
+          if (c) { const d = Math.hypot(x - c.cx, y - c.cy), k = (c.r - m - 0.01) / d; add(c.cx + (x - c.cx) * k, c.cy + (y - c.cy) * k); } else add(x, y);
+        }
         continue;
       }
       const C = corners(t), B = t.boundary, e = T_BOT - PERF.edge;

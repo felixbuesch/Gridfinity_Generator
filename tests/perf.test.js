@@ -175,3 +175,57 @@ describe('mehrfarbiger Stapel: keine Perforation', () => {
     expect(Math.min(R.stacks[0].bed.w, R.stacks[0].bed.d)).toBeLessThanOrEqual(o.bedX - o.towerReserve + 1e-6);
   });
 });
+
+// Kein Bereich über dem Luftspalt darf frei auskragen: jeder Punkt der Auflagefläche liegt in der konvexen
+// Hülle der Punkte in seiner Nähe oder höchstens 1 mm daneben (dazwischen wird zwischen den Punkten überbrückt)
+function hull(P) {
+  const p = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]), cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 1e-12) lo.pop(); lo.push(q); }
+  for (const q of p.slice().reverse()) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 1e-12) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+function distToHull(pt, H) {
+  if (!H.length) return Infinity;
+  if (H.length >= 3) { let inside = true; for (let i = 0; i < H.length; i++) { const a = H[i], b = H[(i + 1) % H.length]; if ((b[0] - a[0]) * (pt[1] - a[1]) - (b[1] - a[1]) * (pt[0] - a[0]) < -1e-9) inside = false; } if (inside) return 0; }
+  let d = Infinity;
+  for (let i = 0; i < H.length; i++) {
+    const a = H[i], b = H[(i + 1) % H.length], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy;
+    const t = l2 ? Math.max(0, Math.min(1, ((pt[0] - a[0]) * vx + (pt[1] - a[1]) * vy) / l2)) : 0;
+    d = Math.min(d, Math.hypot(pt[0] - a[0] - t * vx, pt[1] - a[1] - t * vy));
+  }
+  return d;
+}
+describe('Perforation: nichts kragt über dem Luftspalt aus (massive Teile)', () => {
+  for (const extra of [{ spacerStyle: 'solid' }, { spacerStyle: 'ladder' }, { spacers: 'integrated', boxW: 523.5, boxD: 287.2 }, { spacerStyle: 'solid', perfPitch: 10 }, { spacerStyle: 'solid', boxW: 523.5, boxD: 287.2 }]) {
+    it(JSON.stringify(extra), () => {
+      const o = { ...BASE, boxW: 450, boxD: 330, ...extra }, R = GF.compute(o), pitch = GF.perfOpt(o).pitch;
+      let checked = 0;
+      for (const s of R.stacks) {
+        const dots = GF.perfList(s, o);
+        const area = []; // [tiles oben, tiles unten, Fugenhöhe]
+        for (const e of s.spacers) {
+          if (!e.level) continue;
+          const lo = s.spacers.find((q) => q.x === e.x && q.y === e.y && q.level === e.level - 1);
+          area.push([GF.spacerPlaced(e), GF.spacerPlaced(lo)]);
+        }
+        for (let k = 1; k < s.items.length; k++) area.push([GF.itemTiles(s.items[k]), GF.itemTiles(s.items[k - 1])]);
+        for (const [up, lo] of area) {
+          // Material: in einer massiven Kachel und nicht im weggeschnittenen Bereich einer Wandrundung
+          const cut = (t, x, y) => (t.clips || []).some((c) => { const sx = c.q === 0 || c.q === 3 ? 1 : -1, sy = c.q < 2 ? 1 : -1; return sx * (x - c.cx) < 0 && sy * (y - c.cy) < 0 && Math.hypot(x - c.cx, y - c.cy) > c.r; });
+          const inT = (T, x, y) => T.some((t) => !t.pocket && x >= t.x0 && x <= t.x1 && y >= t.y0 && y <= t.y1 && !cut(t, x, y));
+          for (const t of up) {
+            if (t.pocket) continue;
+            for (let x = t.x0; x <= t.x1 + 1e-9; x += Math.max(0.5, (t.x1 - t.x0) / 8)) for (let y = t.y0; y <= t.y1 + 1e-9; y += Math.max(0.5, (t.y1 - t.y0) / 8)) {
+              if (!inT(lo, x, y) || !inT(up, x, y)) continue;
+              const near = dots.filter((q) => Math.hypot(q[0] - x, q[1] - y) < pitch * 1.6).map((q) => [q[0], q[1]]);
+              expect(distToHull([x, y], hull(near)), `${s.label} bei ${x.toFixed(1)}/${y.toFixed(1)}`).toBeLessThanOrEqual(1.0);
+              checked++;
+            }
+          }
+        }
+      }
+      expect(checked).toBeGreaterThan(0);
+    });
+  }
+});
