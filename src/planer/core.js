@@ -130,7 +130,7 @@ export function readme(P, use) {
         '  4. Nach dem Druck die Platten einzeln von oben abhebeln (Spachtel in den Spalt), jede zweite umdrehen, Punktreste abbrechen.');
       return L.join('\r\n');
     }
-    L.push(`  Stapel mehrfarbig: zwischen zwei Platten liegt eine PETG-Zwischenschicht von ${mm(o.sepT)} mm.`, '  Jede zweite Platte liegt kopfüber, so liegen immer Füße auf Füßen oder Stegoberkanten auf Stegoberkanten.');
+    L.push(`  Multimaterial (PETG-Trennschicht): zwischen zwei Platten liegt eine PETG-Schicht von ${mm(o.sepT)} mm.`, '  Jede zweite Platte liegt kopfüber, so liegen immer Füße auf Füßen oder Stegoberkanten auf Stegoberkanten.');
     L.push('  1. S*.3mf öffnen (PLA-Teil = Filament 1, PETG-Teil = Filament 2).',
       '     Ausweichweg: S*_PLA.stl und S*_PETG.stl zusammen importieren und "als ein Objekt mit mehreren Teilen" laden.',
       pr.nozzles > 1 ? '  2. Filament 1 = PLA auf die linke Düse, Filament 2 = PETG auf die rechte Düse.' : '  2. Filament 1 = PLA, Filament 2 = PETG (beide im AMS).',

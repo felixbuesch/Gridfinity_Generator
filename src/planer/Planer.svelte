@@ -237,8 +237,8 @@
           <div class="f" data-tip={TIPS.stack}>Druckart
             <div class="seg">
               <button type="button" aria-pressed={!o.stack} onclick={() => (o.stack = false)}>Einzeln</button>
-              <button type="button" aria-pressed={o.stack && o.sepStyle === 'perf'} onclick={() => { o.stack = true; o.sepStyle = 'perf'; }} data-tip={TIPS.perf}>Stapel einfarbig</button>
-              <button type="button" aria-pressed={o.stack && o.sepStyle !== 'perf'} onclick={() => { o.stack = true; o.sepStyle = 'petg'; }} data-tip={TIPS.petg}>Stapel mehrfarbig</button>
+              <button type="button" aria-pressed={o.stack && o.sepStyle === 'perf'} onclick={() => { o.stack = true; o.sepStyle = 'perf'; }} data-tip={TIPS.perf}>Ein Material, Perforation</button>
+              <button type="button" aria-pressed={o.stack && o.sepStyle !== 'perf'} onclick={() => { o.stack = true; o.sepStyle = 'petg'; }} data-tip={TIPS.petg}>Multimaterial (PETG-Trennschicht)</button>
             </div>
           </div>
           {#if !o.stack}<p class="hint">Jede Platte wird einzeln gedruckt, nur PLA. Mehr Druckjobs, aber kein Stapel und kein Filamentwechsel.</p>
@@ -353,7 +353,7 @@
       {#each PROFI as [k, l, mn, mx]}
         {@const locked = k === 'spacerH' && o.stack && o.sepStyle !== 'perf'}
         {@const bedLock = (k === 'bedX' || k === 'bedY' || k === 'bedZ') && o.printer !== 'custom'}
-        <label class="f" data-tip={bedLock ? 'Kommt vom gewählten Drucker. Für eigene Maße im Schritt „Drucken“ „Eigener Drucker“ wählen.' : locked ? 'Beim mehrfarbigen Stapel sind die Leisten so hoch wie eine Platte (4,4 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}{#if bedLock}<NumIn value={P.o[k] as number} min={mn} max={mx} disabled />{:else}<NumIn bind:value={o[k] as number} min={mn} max={mx} disabled={locked} />{/if}</label>
+        <label class="f" data-tip={bedLock ? 'Kommt vom gewählten Drucker. Für eigene Maße im Schritt „Drucken“ „Eigener Drucker“ wählen.' : locked ? 'Bei Multimaterial (PETG-Trennschicht) sind die Leisten so hoch wie eine Platte (4,4 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}{#if bedLock}<NumIn value={P.o[k] as number} min={mn} max={mx} disabled />{:else}<NumIn bind:value={o[k] as number} min={mn} max={mx} disabled={locked} />{/if}</label>
       {/each}
     </div>
     <p class="hint">Werte außerhalb der Grenzen werden beim Rechnen auf den nächsten gültigen Wert gesetzt. Die Bettmaße kommen vom gewählten Drucker (Schritt „Drucken“).</p>

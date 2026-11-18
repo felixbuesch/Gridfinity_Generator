@@ -397,13 +397,13 @@ const GF = (() => {
     }
   }
   // Stapeln gibt es in zwei Arten, beide legen jede zweite Platte kopfüber, damit gleiche Flächen aufeinanderliegen:
-  //   mehrfarbig ('petg'): dazwischen eine PETG-Schicht (sepT), die sich vom PLA ablösen lässt
-  //   einfarbig  ('perf'): alles PLA, dazwischen ein Luftspalt mit Punkten als Sollbruchstellen
+  //   Multimaterial ('petg'): dazwischen eine PETG-Schicht (sepT), die sich vom PLA ablösen lässt
+  //   Ein Material ('perf'): alles PLA, dazwischen ein Luftspalt mit Punkten als Sollbruchstellen
   const perfMode = (o) => o.sepStyle === 'perf' && o.stack;
   const perfOpt = (o) => ({ gap: o.perfGap || PERF.gap, dot: o.perfDot || PERF.dot, pitch: o.perfPitch || PERF.pitch });
   // zweites Material (PETG) im Spiel? Nur dann braucht es Platz für den Prime-Tower
   const twoMaterials = (o) => !!o.stack && o.sepStyle !== 'perf';
-  // mehrfarbig: Leisten so hoch wie eine Platte, damit ihre PETG-Schichten auf denselben Höhen liegen wie die der
+  // Multimaterial: Leisten so hoch wie eine Platte, damit ihre PETG-Schichten auf denselben Höhen liegen wie die der
   // Platten (sonst wechselt der Drucker auf viel mehr Schichten das Filament)
   const spacerHeight = (o) => (twoMaterials(o) ? H : o.spacerH || H);
   const sepGap = (o) => (o.sepStyle === 'perf' ? perfOpt(o).gap : o.sepT);
