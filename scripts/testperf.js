@@ -12,7 +12,7 @@ const PITCHES = [4, 6, 9, 12], GAP = 6; // mm zwischen den Stapeln
 const base = {
   boxW: 85, boxD: 85, clearance: 1, cornerR: 0, minSpacer: 2, half: false, spacers: 'separate', spacerStyle: 'ladder',
   alignX: 'center', alignY: 'center', spacerH: 2.4, rail: 1.2, ribPitch: 40, bedX: 256, bedY: 256, bedZ: 256,
-  stack: false, sepStyle: 'perf', sepT: 0.6, overhang: 45, maxStack: 30, towerReserve: 0,
+  stack: false, sepStyle: 'perf', sepT: 0.6, maxStack: 30, towerReserve: 0,
 };
 const R = GF.compute(base);
 if (R.error) { console.error(R.error); process.exit(1); }

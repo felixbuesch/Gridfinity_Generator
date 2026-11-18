@@ -19,8 +19,8 @@ const GF = (() => {
     depth: 1.2,    // mm: so weit ragt ein Zapfen über die Stoßkante (Brücke: je Seite)
     neck: 6,       // mm: Breite an der Stoßkante
     flank: 45,     // Grad: Hinterschnitt der Flanken; Kopf = neck + 2 · depth · tan(flank)
-    height: 2.2,   // mm: Höhe von Zapfen und Brücke ab Unterseite (11 Schichten)
-    pocketH: 2.4,  // mm: Höhe der Tasche (0,2 mm Luft über dem Zapfen = eine Schicht)
+    height: 2.2,   // mm: bis hier ragt der Zapfen voll heraus (11 Schichten); darüber Dach unter 45° bis height + depth
+    pocketH: 2.4,  // mm: bis hier ist die Tasche voll tief (eine Schicht Luft über dem Zapfen); darüber Dach unter 45°
     fit: 0.15,     // mm: Spiel je Flanke und an der Zapfenspitze (Standard)
     blockN: 10,    // Brücken je Reihe auf dem Druckbett
     blockGap: 2,   // mm: Abstand der Brücken auf dem Druckbett
@@ -313,35 +313,42 @@ const GF = (() => {
       const a = C[s], b = C[(s + 1) % 4], L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
       const P = (u, v) => [a[0] + u * ux - v * uy, a[1] + u * uy + v * ux]; // u längs der Kante, v nach innen
       const uc = L / 2;
-      if (kind === 2) { const hn = CONN.neck / 2, e = g.D * g.tan; return { kind, h: CONN.pocketH, n1: P(uc - hn, 0), n2: P(uc + hn, 0), h1: P(uc - hn - e, g.D), h2: P(uc + hn + e, g.D) }; }
+      if (kind === 2) { const hn = CONN.neck / 2, e = g.D * g.tan; return { kind, k: CONN.pocketH, h: CONN.pocketH + g.D, n1: P(uc - hn, 0), n2: P(uc + hn, 0), h1: P(uc - hn - e, g.D), h2: P(uc + hn + e, g.D) }; }
       const e = CONN.depth * g.tan;
-      return { kind, h: CONN.height, n1: P(uc - g.wn, 0), n2: P(uc + g.wn, 0), h1: P(uc - g.wn - e, -CONN.depth), h2: P(uc + g.wn + e, -CONN.depth) };
+      return { kind, k: CONN.height, h: CONN.height + CONN.depth, n1: P(uc - g.wn, 0), n2: P(uc + g.wn, 0), h1: P(uc - g.wn - e, -CONN.depth), h2: P(uc + g.wn + e, -CONN.depth) };
     });
   }
-  // Tasche: von unten offen, Decke auf pocketH (kurze Brücke beim Druck), Wände senkrecht
+  // Tasche: von unten offen, bis k voll tief, darüber ein Dach unter 45°, das an der Stoßkante auf h ausläuft.
+  // Die Rippe der Platte wird oberhalb von 2,5 mm unter 45° schmaler: das Dach folgt ihr, die Wand bleibt überall
+  // gleich dick, und weder Tasche noch Zapfen haben eine waagerechte Decke (kein Überhang, keine Stützen).
   function addSocket(m, f, z0) {
-    const zh = z0 + f.h, P = [f.n1, f.h1, f.h2, f.n2];
-    for (let i = 0; i < 3; i++) m.quad(z3(P[i], z0), z3(P[i + 1], z0), z3(P[i + 1], zh), z3(P[i], zh));
-    m.quad(z3(f.n1, zh), z3(f.h1, zh), z3(f.h2, zh), z3(f.n2, zh));
+    const zk = z0 + f.k, za = z0 + f.h;
+    m.quad(z3(f.n1, z0), z3(f.h1, z0), z3(f.h1, zk), z3(f.n1, za));
+    m.quad(z3(f.h1, z0), z3(f.h2, z0), z3(f.h2, zk), z3(f.h1, zk));
+    m.quad(z3(f.h2, z0), z3(f.n2, z0), z3(f.n2, za), z3(f.h2, zk));
+    m.quad(z3(f.n1, za), z3(f.h1, zk), z3(f.h2, zk), z3(f.n2, za));
   }
-  // Zapfen. mode: 'full' liegt auf dem Druckbett; 'bottom' = Unterseite steigt unter 45° aus der Plattenwand
-  // (Platte höher im Stapel), 'top' = Oberseite fällt unter 45° (Platte wird kopfüber gedruckt) -> druckt ohne Stützen
+  // Zapfen: bis k voll, darüber fällt die Oberseite unter 45° zur Plattenwand (h). mode 'bottom' = auch die
+  // Unterseite steigt unter 45° aus der Plattenwand (Platte liegt höher im Stapel) -> druckt ohne Stützen.
+  // Kopfüber gedruckt wird das Dach zur 45°-Unterseite, deshalb braucht es dafür keine eigene Form mehr.
   function addTab(m, f, z0, mode) {
-    const zr = z0 + f.h, zb = mode === 'bottom' ? z0 + CONN.depth : z0, zt = mode === 'top' ? zr - CONN.depth : zr;
-    const r1b = z3(f.n1, z0), r2b = z3(f.n2, z0), r1t = z3(f.n1, zr), r2t = z3(f.n2, zr);
-    const t1b = z3(f.h1, zb), t2b = z3(f.h2, zb), t1t = z3(f.h1, zt), t2t = z3(f.h2, zt);
+    const za = z0 + f.h, zk = z0 + f.k, tb = mode === 'bottom' ? z0 + CONN.depth : z0;
+    const r1b = z3(f.n1, z0), r2b = z3(f.n2, z0), r1t = z3(f.n1, za), r2t = z3(f.n2, za);
+    const t1b = z3(f.h1, tb), t2b = z3(f.h2, tb), t1t = z3(f.h1, zk), t2t = z3(f.h2, zk);
     m.quad(r1t, t1t, t2t, r2t); m.quad(r2b, t2b, t1b, r1b);
     m.quad(r1b, t1b, t1t, r1t); m.quad(t1b, t2b, t2t, t1t); m.quad(t2b, r2b, r2t, t2t);
   }
   // Brücke (Doppel-Schwalbenschwanz) um (cx, cy), Hals längs x, liegt flach auf dem Bett
+  // Seitenwände bis CONN.height, darüber ein Satteldach unter 45° mit dem First über der Stoßkante
   function addBridge(m, cx, cy, fit) {
-    const g = connGeo(fit), d = CONN.depth, wh = g.wn + d * g.tan, h = CONN.height;
+    const g = connGeo(fit), d = CONN.depth, wh = g.wn + d * g.tan, h = CONN.height, top = bridgeH();
     const O = [[-wh, -d], [wh, -d], [g.wn, 0], [wh, d], [-wh, d], [-g.wn, 0]].map(([x, y]) => [cx + x, cy + y]);
-    const q = (i, z) => z3(O[i], z);
-    m.quad(q(0, h), q(1, h), q(2, h), q(5, h)); m.quad(q(5, h), q(2, h), q(3, h), q(4, h));
+    const zt = (i) => (i === 2 || i === 5 ? top : h), q = (i, z) => z3(O[i], z ?? zt(i));
+    m.quad(q(0), q(1), q(2), q(5)); m.quad(q(5), q(2), q(3), q(4));
     m.quad(q(5, 0), q(2, 0), q(1, 0), q(0, 0)); m.quad(q(4, 0), q(3, 0), q(2, 0), q(5, 0));
-    for (let i = 0; i < 6; i++) { const j = (i + 1) % 6; m.quad(q(i, 0), q(j, 0), q(j, h), q(i, h)); }
+    for (let i = 0; i < 6; i++) { const j = (i + 1) % 6; m.quad(q(i, 0), q(j, 0), q(j), q(i)); }
   }
+  const bridgeH = () => CONN.height + CONN.depth;
   const bridgeSize = (fit) => { const g = connGeo(fit); return [2 * (g.wn + CONN.depth * g.tan), 2 * CONN.depth]; };
   function bridgeMesh(fit) { const m = new Mesh(), [w, d] = bridgeSize(fit); addBridge(m, w / 2, d / 2, fit); return m; }
   // Zapfen ragen über die Platte hinaus: so viel bleibt ringsum auf dem Druckbett frei
@@ -370,30 +377,18 @@ const GF = (() => {
       walls(m, t, z0, z0 + (t.pocket ? H : HS), kb, kt);
     }
   }
-  // separator (PETG) placed on a plate whose base is at z0; thickness s; wedge fills the upper chamfer
-  function addSeparator(m, tiles, z0, s, wedgeDepth) {
-    const wedge = wedgeDepth > 0.05, wd = Math.min(wedgeDepth, H - CHAMFER_Z);
-    const Z0 = z0 + H, Z1 = Z0 + s;
+  // PETG-Zwischenschicht der Dicke s ab Z0 mit dem Umriss, mit dem die obere Platte aufliegt.
+  // top = false: die obere Platte steht mit den Füßen darauf (Ring bis T_BOT, wie ihre Unterseite);
+  // top = true: die obere Platte liegt kopfüber mit den Stegoberkanten darauf (Ring bis TOP, wie ihre Oberseite).
+  function addSeparator(m, tiles, Z0, s, top) {
+    const Z1 = Z0 + s, kf = knifeFlags;
     for (const t of tiles) {
-      const kb = knifeFlags(t, wedge), kt = knifeFlags(t, false);
+      const kb = kf(t, false), kt = kf(t, false);
       if (t.pocket) {
-        // an einer Wandrundung folgt die Schräge der Platte keiner geraden Linie mehr: dort ohne Keil
-        if (wedge && !isClipped(t)) {
-          // grows out of the 45deg chamfer of the plate below: starts as a line on the chamfer,
-          // inner face rises at 45deg to the rib edge (inset T_BOT) of the next plate -> no overhang
-          const ts = T_BOT / 2, zc = Z0 - (ts - TOP);
-          const rs = ring(t, ts, zc, topEx(t).map((e) => e * (1 - (ts - TOP) / (H - CHAMFER_Z)))), rIn = ring(t, T_BOT, Z0), inHi = ring(t, T_BOT, Z1), r0 = ring(t, TOP, Z0, topEx(t));
-          loft(m, rs, r0, true);     // lies on the PLA chamfer
-          loft(m, rs, rIn, false);   // 45deg inner flank
-          loft(m, rIn, inHi, false); // vertical inner edge of the sheet
-          rectAnnulus(m, t, r0, Z0, false);
-          rectAnnulus(m, t, inHi, Z1, true);
-        } else {
-          const lo = ring(t, T_BOT, Z0), hi = ring(t, T_BOT, Z1);
-          loft(m, lo, hi, false);
-          rectAnnulus(m, t, lo, Z0, false);
-          rectAnnulus(m, t, hi, Z1, true);
-        }
+        const r = (z) => (top ? ring(t, TOP, z, topEx(t)) : ring(t, T_BOT, z)), lo = r(Z0), hi = r(Z1);
+        loft(m, lo, hi, false);
+        rectAnnulus(m, t, lo, Z0, false);
+        rectAnnulus(m, t, hi, Z1, true);
       } else {
         m.fan(tilePoly(t, kt, Z1));
         m.fan(tilePoly(t, kb, Z0).reverse());
@@ -401,39 +396,18 @@ const GF = (() => {
       walls(m, t, Z0, Z1, kb, kt);
     }
   }
-
-  // PETG that starts on the top edges of the plate below and grows outward at the allowed overhang angle
-  // until it reaches the full foot of the next plate (inset T_BOT), then a flat base of thickness s
-  const growHeight = (o) => (T_BOT - TOP) / Math.tan(Math.max(20, Math.min(70, o.overhang || 45)) * Math.PI / 180);
-  // Wendeplatte: jede zweite Platte ist selbst die PETG-Trennung (kopfüber), Platten liegen direkt aufeinander
-  // Wendeplatte: Leisten so hoch wie eine Platte und im Turm ebenfalls abwechselnd PLA/PETG ohne Zwischenlage
-  const flipMode = (o) => o.sepStyle === 'flip' && o.stack;
-  // Perforation: ein Material, Platten abwechselnd kopfüber mit Luftspalt, dazwischen nur Punkte
+  // Stapeln gibt es in zwei Arten, beide legen jede zweite Platte kopfüber, damit gleiche Flächen aufeinanderliegen:
+  //   mehrfarbig ('petg'): dazwischen eine PETG-Schicht (sepT), die sich vom PLA ablösen lässt
+  //   einfarbig  ('perf'): alles PLA, dazwischen ein Luftspalt mit Punkten als Sollbruchstellen
   const perfMode = (o) => o.sepStyle === 'perf' && o.stack;
-  const altFlip = (o) => o.sepStyle === 'flip' || o.sepStyle === 'perf';
   const perfOpt = (o) => ({ gap: o.perfGap || PERF.gap, dot: o.perfDot || PERF.dot, pitch: o.perfPitch || PERF.pitch });
   // zweites Material (PETG) im Spiel? Nur dann braucht es Platz für den Prime-Tower
   const twoMaterials = (o) => !!o.stack && o.sepStyle !== 'perf';
-  const spacerHeight = (o) => (flipMode(o) ? H : o.spacerH || H);
-  const spacerGap = (o) => (flipMode(o) ? 0 : perfMode(o) ? perfOpt(o).gap : o.sepT);
-  const sepGap = (o) => o.sepStyle === 'flip' ? 0 : o.sepStyle === 'perf' ? perfOpt(o).gap : o.sepStyle === 'grow' ? growHeight(o) + o.sepT : o.sepT;
-  function addGrowSeparator(m, tiles, Z0, gh, s) {
-    const Za = Z0 + gh, Z1 = Za + s;
-    for (const t of tiles) {
-      const kb = knifeFlags(t, true), kt = knifeFlags(t, false);
-      if (t.pocket) {
-        const r0 = ring(t, TOP, Z0, topEx(t)), ra = ring(t, T_BOT, Za), r1 = ring(t, T_BOT, Z1);
-        loft(m, r0, ra, false);   // overhang flank, grows outward from the flat rib top
-        loft(m, ra, r1, false);   // vertical edge of the base layer
-        rectAnnulus(m, t, r0, Z0, false);
-        rectAnnulus(m, t, r1, Z1, true);
-      } else {
-        m.fan(tilePoly(t, kt, Z1));
-        m.fan(tilePoly(t, kb, Z0).reverse());
-      }
-      walls(m, t, Z0, Z1, kb, kt);
-    }
-  }
+  // mehrfarbig: Leisten so hoch wie eine Platte, damit ihre PETG-Schichten auf denselben Höhen liegen wie die der
+  // Platten (sonst wechselt der Drucker auf viel mehr Schichten das Filament)
+  const spacerHeight = (o) => (twoMaterials(o) ? H : o.spacerH || H);
+  const sepGap = (o) => (o.sepStyle === 'perf' ? perfOpt(o).gap : o.sepT);
+  const spacerGap = sepGap;
   // ---------- layout ----------
   // axis: {cells:[w...], mLow, mHigh}
   function axisLayout(inner, clearance, minSpacer, half, align) {
@@ -689,10 +663,10 @@ const GF = (() => {
       for (let left = bridges.count ? bridges.count + CONN.spare : 0; left > 0; left -= CONN.blockN) {
         const n = Math.min(CONN.blockN, left), w = n * bw + (n - 1) * CONN.blockGap;
         let t = bridges.types.find((q) => q.n === n);
-        if (!t) { t = { bridge: true, label: 'B' + (bridges.types.length + 1), n, w, d: bd, h: CONN.height, fit, bw, items: [], tiles: [] }; bridges.types.push(t); }
+        if (!t) { t = { bridge: true, label: 'B' + (bridges.types.length + 1), n, w, d: bd, h: bridgeH(), fit, bw, items: [], tiles: [] }; bridges.types.push(t); }
         const b = { x0: 0, y0: 0, x1: w, y1: bd, type: t, bridge: true }; t.items.push(b); bridges.list.push(b);
       }
-      bridges.total = bridges.count + CONN.spare; bridges.size = [bw, bd, CONN.height];
+      bridges.total = bridges.count + CONN.spare; bridges.size = [bw, bd, bridgeH()];
     }
     const stacks = flatPlace
       ? [{ label: 'J1', flat: true, bedRot: Math.abs(flatPlace.W - bx) > 1e-6, bed: { w: flatPlace.W, d: flatPlace.D }, foot: { w: flatPlace.fw, d: flatPlace.fd },
@@ -942,11 +916,11 @@ const GF = (() => {
         const top = s.items[s.items.length - 1];
         let it;
         if (margins) { // integrierte Ränder: nur ungedreht und bündig (alte Regel); gewendet spiegeln sich die Ränder in y
-          const flip = altFlip(o) ? s.items.length % 2 : 0;
+          const flip = s.items.length % 2;
           const ay = flip ? { cells: p.ay.cells.slice().reverse(), mLow: p.ay.mHigh, mHigh: p.ay.mLow } : p.ay;
           const fx = axisFit(p.ax, top.pax), fy = axisFit(ay, top.pay);
           it = fx === null || fy === null ? null : { p, rot: 0, flip, pax: p.ax, pay: ay, dx: top.dx + fx, dy: top.dy + fy };
-        } else it = placeOn(p, top, altFlip(o) ? s.items.length % 2 : 0);
+        } else it = placeOn(p, top, s.items.length % 2);
         if (!it) continue;
         // gleiche Platte oben bevorzugen, sonst die engste passende
         const score = (top.p.key === p.key ? 0 : 1e9) + top.p.w * top.p.d;
@@ -1134,32 +1108,25 @@ const GF = (() => {
     stack.items.forEach((it, k) => {
       const base = it.rot ? rotTiles(it.p.type.tiles, it.p.d) : it.p.type.tiles;
       const lvk = it.lv ?? k;
-      if (it.flip) { // PETG-Wendeplatte: Platte bauen und kopfüber an ihren Platz legen (180° um x, echte Drehung)
-        const tmp = new Mesh(); addPlate(tmp, base, 0, undefined, 'top');
+      // PETG-Zwischenschicht unter der Platte: kopfüber liegt sie mit den Stegoberkanten auf, sonst mit den Füßen
+      if (lvk > 0 && !pm) addSeparator(petg, itemTiles(it), (lvk - 1) * per + H, o.sepT, !!it.flip);
+      if (it.flip) { // Platte bauen und kopfüber an ihren Platz legen (180° um x, echte Drehung)
+        const tmp = new Mesh(); addPlate(tmp, base, 0, undefined, 'full');
         const dd = it.rot ? it.p.w : it.p.d, z0 = lvk * per, V = tmp.v, F = tmp.f;
         const P = (i) => [V[3 * i] + it.dx, dd - V[3 * i + 1] + it.dy, z0 + H - V[3 * i + 2]];
-        const dst = pm ? pla : petg; // Perforation: auch die gewendete Platte ist PLA
-        for (let q = 0; q < F.length; q += 3) dst.tri(P(F[q]), P(F[q + 1]), P(F[q + 2]));
+        for (let q = 0; q < F.length; q += 3) pla.tri(P(F[q]), P(F[q + 1]), P(F[q + 2]));
         return;
       }
       const tiles = base.map((t) => moveTile(t, it.dx, it.dy));
       addPlate(pla, tiles, lvk * per, undefined, lvk > 0 ? 'bottom' : 'full');
-      if (lvk > 0 && !altFlip(o)) {
-        if (o.sepStyle === 'sheet') { // one continuous PETG foil over the whole footprint of the upper plate
-          const sheet = tiles.map(t => ({ ...t, pocket: false, nbPocket: [false, false, false, false] }));
-          addPlate(petg, sheet, (k - 1) * per + H, o.sepT);
-        } else if (o.sepStyle === 'grow') addGrowSeparator(petg, tiles, (k - 1) * per + H, growHeight(o), o.sepT);
-        else addSeparator(petg, tiles, (k - 1) * per, o.sepT, o.sepStyle === 'wedge' ? 1 : 0);
-      }
     });
-    const sh = spacerHeight(o), perS = sh + spacerGap(o), flip = flipMode(o);
+    const sh = spacerHeight(o), perS = sh + spacerGap(o);
     let hs = 0;
     for (const e of (stack.spacers || [])) {
       const t = e.sp.type; if (!t._mesh || t._meshH !== t.h) { t._mesh = spacerMesh(t); t._meshH = t.h; }
       const lv = e.level || 0;
-      // Wendeplatte: Leisten auf ungeraden Ebenen sind aus PETG (gleiche Höhen wie die PETG-Platten)
-      merge(flip && lv % 2 ? petg : pla, t._mesh, e.x, e.y, e.rot, t.d, lv * perS);
-      if (lv > 0 && !flip && !pm) { // PETG sheet with the strip's footprint below it
+      merge(pla, t._mesh, e.x, e.y, e.rot, t.d, lv * perS);
+      if (lv > 0 && !pm) { // PETG sheet with the strip's footprint below it
         if (!t._sep || t._sepT !== o.sepT) { t._sep = new Mesh(); addPlate(t._sep, t.tiles, 0, o.sepT); t._sepT = o.sepT; }
         merge(petg, t._sep, e.x, e.y, e.rot, t.d, lv * perS - o.sepT);
       }
@@ -1221,29 +1188,22 @@ const GF = (() => {
   }
   function stackInfo(stack, o) {
     const vol = (obj, key, mk) => { obj._vol = obj._vol || {}; if (!(key in obj._vol)) obj._vol[key] = volume(mk()); return obj._vol[key]; };
-    const gap = sepGap(o), per = H + gap, flip = flipMode(o);
+    const gap = sepGap(o), per = H + gap, pm = perfMode(o);
     let pla = 0, petg = 0;
     stack.items.forEach((it, k) => {
-      const t = it.p.type, lvk = it.lv ?? k, tm = it.flip ? 'top' : lvk > 0 ? 'bottom' : 'full';
-      const pv = vol(t, 'plate:' + tm, () => { const m = new Mesh(); addPlate(m, t.tiles, 0, undefined, tm); return m; });
-      if (it.flip && !perfMode(o)) { petg += pv; return; }
-      pla += pv;
-      if (lvk > 0 && !altFlip(o)) {
-        petg += vol(t, 'sep:' + o.sepStyle + ':' + o.sepT + ':' + o.overhang, () => {
-          const m = new Mesh();
-          if (o.sepStyle === 'sheet') addPlate(m, t.tiles.map(q => ({ ...q, pocket: false, nbPocket: [false, false, false, false] })), 0, o.sepT);
-          else if (o.sepStyle === 'grow') addGrowSeparator(m, t.tiles, H, growHeight(o), o.sepT);
-          else addSeparator(m, t.tiles, 0, o.sepT, o.sepStyle === 'wedge' ? 1 : 0);
-          return m;
-        });
+      const t = it.p.type, lvk = it.lv ?? k, tm = lvk > 0 && !it.flip ? 'bottom' : 'full';
+      pla += vol(t, 'plate:' + tm, () => { const m = new Mesh(); addPlate(m, t.tiles, 0, undefined, tm); return m; });
+      if (lvk > 0 && !pm) {
+        const top = !!it.flip;
+        petg += vol(t, 'sep:' + top + ':' + o.sepT, () => { const m = new Mesh(); addSeparator(m, t.tiles, 0, o.sepT, top); return m; });
       }
     });
     const sh = spacerHeight(o), perS = sh + spacerGap(o);
     let hs = 0;
     for (const e of (stack.spacers || [])) {
-      const t = e.sp.type, lv = e.level || 0, sv = vol(t, 'sp:' + t.h, () => spacerMesh(t));
-      if (flip && lv % 2) petg += sv; else pla += sv;
-      if (lv > 0 && !flip && !perfMode(o)) petg += vol(t, 'spsep:' + o.sepT, () => { const m = new Mesh(); addPlate(m, t.tiles, 0, o.sepT); return m; });
+      const t = e.sp.type, lv = e.level || 0;
+      pla += vol(t, 'sp:' + t.h, () => spacerMesh(t));
+      if (lv > 0 && !pm) petg += vol(t, 'spsep:' + o.sepT, () => { const m = new Mesh(); addPlate(m, t.tiles, 0, o.sepT); return m; });
       hs = Math.max(hs, lv * perS + sh);
     }
     for (const e of (stack.bridges || [])) { const t = e.sp.type; pla += vol(t, 'bridge', () => spacerMesh(t)); hs = Math.max(hs, t.h); }
@@ -1365,7 +1325,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PRINTERS, printerOf, applyPrinter, printerFor, printArea, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, flipMode, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PRINTERS, printerOf, applyPrinter, printerFor, printArea, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;

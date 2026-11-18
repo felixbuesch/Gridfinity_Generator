@@ -17,7 +17,7 @@ export const DEFAULTS = {
   boxW: 400, boxD: 300, clearance: 1, cornerR: 3, minSpacer: 2, half: false,
   spacers: 'separate', spacerStyle: 'ladder', alignX: 'center', alignY: 'center',
   spacerH: 2.4, rail: 1.2, ribPitch: 40, bedX: 235, bedY: 256, bedZ: 256,
-  stack: true, sepStyle: 'grow', sepT: 0.6, overhang: 45, maxStack: 30, towerReserve: 40, copies: 1,
+  stack: true, sepStyle: 'petg', sepT: 0.6, overhang: 45, maxStack: 30, towerReserve: 40, copies: 1,
   printer: 'x2d', connect: 'none', connFit: 0.15, perfGap: 0.4, perfDot: 0.8, perfPitch: 6,
 };
 

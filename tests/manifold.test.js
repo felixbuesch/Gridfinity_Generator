@@ -10,7 +10,7 @@ const BASE = {
   spacers: 'separate', spacerStyle: 'ladder', alignX: 'center', alignY: 'center',
   spacerH: 2.4, rail: 1.2, ribPitch: 40,
   bedX: 235, bedY: 256, bedZ: 256,
-  stack: true, sepStyle: 'grow', sepT: 0.6, overhang: 45, maxStack: 8, towerReserve: 40,
+  stack: true, sepStyle: 'petg', sepT: 0.6, maxStack: 8, towerReserve: 40,
 };
 
 const BOXES = [
@@ -22,7 +22,7 @@ const BOXES = [
   { boxW: 400, boxD: 300, maxStack: 30 }, // gedrehte Platten im Stapel
   { boxW: 800, boxD: 500, maxStack: 30, half: true },
 ];
-const SEP_STYLES = ['grow', 'ring', 'wedge', 'sheet', 'flip'];
+const SEP_STYLES = ['petg', 'perf'];
 const SPACER_MODES = ['separate', 'integrated'];
 
 let wasm;
@@ -68,8 +68,9 @@ describe.each(cases)('Box $boxW × $boxD, $spacers, $sepStyle', (o) => {
       const m = GF.stackMeshes(s, o);
       check(m.pla, `${s.label} PLA`);
       const stacked = !R.flat && (s.items.length > 1 || s.spacers.some((e) => e.level > 0));
-      if (stacked) check(m.petg, `${s.label} PETG`);
+      if (stacked && o.sepStyle !== 'perf') check(m.petg, `${s.label} PETG`);
       else expect(m.petg.f.length).toBe(0);
+      if (stacked && o.sepStyle === 'perf') check(m.perf, `${s.label} Punkte`);
       expect(m.height).toBeLessThanOrEqual(o.bedZ + 1e-6);
     });
   });
@@ -92,13 +93,13 @@ describe('Layout', () => {
     }
   });
 
-  it('"Aus Stegspitze": Stapelabstand = H + (2,85 − 0,25)/tan(45°) + Basisschicht', () => {
+  it('mehrfarbig: Stapelabstand = H + PETG-Zwischenschicht', () => {
     const R = GF.compute(BASE);
     const s = R.stacks.find((st) => st.items.length > 1);
     expect(s).toBeTruthy();
     const m = GF.stackMeshes(s, BASE);
     const n = s.items.length;
-    expect(m.height).toBeCloseTo(n * GF.H + (n - 1) * (2.85 - 0.25 + 0.6), 6);
+    expect(m.height).toBeCloseTo(n * GF.H + (n - 1) * 0.6, 6);
   });
 
   it('Gegenprobe: ein Netz mit Loch wird erkannt', () => {

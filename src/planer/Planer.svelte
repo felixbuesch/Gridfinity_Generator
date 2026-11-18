@@ -85,12 +85,12 @@
     const ox = R.AX.gapLow, oy = R.AY.gapLow, j = jobOf(P, sel);
     if (sel.kind === 'P') {
       const p = R.pieces[sel.idx]; if (!p) return null;
-      const petg = !!(j && j.petg), v = GF.volume(P.mesh(plateKey(P, p)).pla);
-      return { tag: p.type.label, title: 'Platte', sub: cellsOf(p), rows: [['Maße', `${fmt(p.w)} × ${fmt(p.d)} × 4,4 mm`], ['Position', `${fmt(ox + p.x)} / ${fmt(oy + p.y)} mm ab links / vorne`], ['Gleiche Teile', `${p.type.pieces.length}×`], [petg ? 'PETG' : 'PLA', `${fmt(v * (petg ? 1.27 : PLA_DENSITY), 0)} g${petg ? ' · kopfüber gedruckt' : ''}`]], j };
+      const v = GF.volume(P.mesh(plateKey(P, p)).pla);
+      return { tag: p.type.label, title: 'Platte', sub: cellsOf(p), rows: [['Maße', `${fmt(p.w)} × ${fmt(p.d)} × 4,4 mm`], ['Position', `${fmt(ox + p.x)} / ${fmt(oy + p.y)} mm ab links / vorne`], ['Gleiche Teile', `${p.type.pieces.length}×`], ['PLA', `${fmt(v * PLA_DENSITY, 0)} g${j && j.flip ? ' · kopfüber gedruckt' : ''}`]], j };
     }
     const s = R.spacers.list[sel.idx]; if (!s) return null; const t = s.type;
-    const petg = !!(j && j.petg), v = GF.volume(P.mesh(spacerKey(P, s)).spacer);
-    return { tag: t.label, title: 'Leiste', sub: '', rows: [['Maße', `${fmt(t.w, 2)} × ${fmt(t.d, 2)} × ${fmt(t.h, 2)} mm`], ['Form', o.spacerStyle === 'solid' || t.tiles.length === 1 ? 'voll' : `Leiter, ${fmt(o.rail, 2)} mm Schienen`], ['Position', `${fmt(ox + s.x0)} / ${fmt(oy + s.y0)} mm ab links / vorne`], ['Gleiche Teile', `${t.items.length}×`], [petg ? 'PETG' : 'PLA', `${fmt(v * (petg ? 1.27 : PLA_DENSITY), 1)} g`]], j };
+    const v = GF.volume(P.mesh(spacerKey(P, s)).spacer);
+    return { tag: t.label, title: 'Leiste', sub: '', rows: [['Maße', `${fmt(t.w, 2)} × ${fmt(t.d, 2)} × ${fmt(t.h, 2)} mm`], ['Form', o.spacerStyle === 'solid' || t.tiles.length === 1 ? 'voll' : `Leiter, ${fmt(o.rail, 2)} mm Schienen`], ['Position', `${fmt(ox + s.x0)} / ${fmt(oy + s.y0)} mm ab links / vorne`], ['Gleiche Teile', `${t.items.length}×`], ['PLA', `${fmt(v * PLA_DENSITY, 1)} g`]], j };
   });
 
   async function download(id: string, name: string, make: () => Uint8Array) {
@@ -130,7 +130,7 @@
     ['bedX', 'Bett X (mm)', 50, 1000], ['bedY', 'Bett Y (mm)', 50, 1000], ['bedZ', 'Höhe Z (mm)', 10, 1000],
     ['connFit', 'Spiel Verbindung (mm)', 0, 0.5],
     ['perfPitch', 'Perforation: Punktabstand (mm)', 2, 30], ['perfDot', 'Perforation: Punkt-Ø (mm)', 0.4, 3], ['perfGap', 'Perforation: Z-Abstand (mm)', 0.1, 1.2],
-    ['sepT', 'PETG-Basisschicht (mm)', 0.1, 5], ['overhang', 'Überhang (°)', 20, 70], ['maxStack', 'Max. Platten je Stapel', 1, 100], ['towerReserve', 'Platz Prime-Tower (mm)', 0, 200],
+    ['sepT', 'PETG-Zwischenschicht (mm)', 0.1, 5], ['maxStack', 'Max. Platten je Stapel', 1, 100], ['towerReserve', 'Platz Prime-Tower (mm)', 0, 200],
   ];
 </script>
 
@@ -227,18 +227,16 @@
         {#if R.flat}
           <p class="flat" data-tip={TIPS.flat}>✓ Passt flach auf ein Druckbett. Kein Stapeln nötig: nur PLA, kein PETG, kein Prime-Tower.</p>
         {:else}
-        <label class="tog" data-tip={TIPS.stack}><input type="checkbox" bind:checked={o.stack}> Platten stapeln (PLA + PETG)</label>
-        {/if}
-        {#if o.stack && !R.flat}
-          <div class="f" data-tip={TIPS.sepStyle}>Trennung zwischen den Platten
+          <div class="f" data-tip={TIPS.stack}>Druckart
             <div class="seg">
-              <button type="button" aria-pressed={o.sepStyle !== 'flip' && o.sepStyle !== 'perf'} onclick={() => (o.sepStyle = 'grow')}>Aus Stegspitze</button>
-              <button type="button" aria-pressed={o.sepStyle === 'flip'} onclick={() => (o.sepStyle = 'flip')} data-tip={TIPS.flip}>Wendeplatte</button>
-              <button type="button" aria-pressed={o.sepStyle === 'perf'} onclick={() => (o.sepStyle = 'perf')} data-tip={TIPS.perf}>Ein Material, Perforation</button>
+              <button type="button" aria-pressed={!o.stack} onclick={() => (o.stack = false)}>Einzeln</button>
+              <button type="button" aria-pressed={o.stack && o.sepStyle === 'perf'} onclick={() => { o.stack = true; o.sepStyle = 'perf'; }} data-tip={TIPS.perf}>Stapel einfarbig</button>
+              <button type="button" aria-pressed={o.stack && o.sepStyle !== 'perf'} onclick={() => { o.stack = true; o.sepStyle = 'petg'; }} data-tip={TIPS.petg}>Stapel mehrfarbig</button>
             </div>
           </div>
-          {#if o.sepStyle === 'flip'}<p class="hint">Jede zweite Platte wird aus <b class="pe">PETG kopfüber</b> gedruckt und trennt die PLA-Platten. Nach dem Druck umdrehen, dann ist sie eine normale Grundplatte. Die Leisten sind dann 4,4 mm hoch und wechseln im Turm genauso zwischen PLA und <b class="pe">PETG</b>. In der 3D-Ansicht orange.</p>{/if}
-          {#if o.sepStyle === 'perf'}<p class="hint">Alles aus PLA, kein PETG und kein Prime-Tower. Die Platten liegen abwechselnd kopfüber mit {fmt(o.perfGap, 2)} mm Luftspalt, dazwischen stehen nur Punkte als Sollbruchstellen. Noch nicht am Drucker erprobt: zuerst die Testdatei drucken. Abstand, Durchmesser und Z-Abstand stehen in den Profi-Einstellungen.</p>{/if}
+          {#if !o.stack}<p class="hint">Jede Platte wird einzeln gedruckt, nur PLA. Mehr Druckjobs, aber kein Stapel und kein Filamentwechsel.</p>
+          {:else if o.sepStyle === 'perf'}<p class="hint">Alles aus PLA, kein PETG und kein Prime-Tower. Die Platten liegen abwechselnd kopfüber mit {fmt(o.perfGap, 2)} mm Luftspalt, dazwischen stehen nur Punkte als Sollbruchstellen. Noch nicht am Drucker erprobt. Abstand, Durchmesser und Z-Abstand stehen in den Profi-Einstellungen.</p>
+          {:else}<p class="hint">Zwischen den Platten liegt eine <b class="pe">PETG</b>-Schicht von {fmt(o.sepT, 1)} mm, jede zweite Platte liegt kopfüber. Braucht AMS oder zwei Düsen. In der 3D-Ansicht ist PETG orange.</p>{/if}
         {/if}
         {#if !R.error && R.pieces.length > (o.copies || 1)}
           <div class="f" data-tip={TIPS.connect}>Platten verbinden
@@ -262,12 +260,18 @@
             {/each}
           </div>
           <details class="more"><summary>So druckst du in Bambu Studio</summary>
-            {#if o.stack && !R.flat}
+            {#if o.stack && !R.flat && o.sepStyle === 'perf'}
+            <ol>
+              <li>Die 3MF (oder die PLA-STL) des Stapels öffnen. Alles ist PLA, Filament 1.</li>
+              <li>Schichthöhe 0,2 mm, auch die erste Schicht. Stützen aus, kein Prime-Tower.</li>
+              <li>Nach dem Druck die Platten von oben abhebeln, jede zweite umdrehen, Punktreste abbrechen.</li>
+            </ol>
+            {:else if o.stack && !R.flat}
             <ol>
               <li>Die 3MF des Druckbetts öffnen. PLA-Teil = Filament 1, PETG-Teil = Filament 2. Ausweichweg: <code>…_PLA.stl</code> und <code>…_PETG.stl</code> zusammen importieren und „als ein Objekt mit mehreren Teilen“ laden.</li>
               <li>{GF.printerOf(o).nozzles > 1 ? 'PLA auf die linke Düse, PETG auf die rechte.' : 'Filament 1 = PLA, Filament 2 = PETG (beide im AMS).'}</li>
               <li>Stützen aus, die Trennschichten sind schon im Modell. Prime-Tower an, Schichthöhe 0,2 mm.</li>
-              <li>Nach dem Druck den Stapel von oben nach unten auseinanderziehen.</li>
+              <li>Nach dem Druck den Stapel von oben nach unten auseinanderziehen, PETG abziehen, die kopfüber gedruckten Platten umdrehen.</li>
             </ol>
             {:else}
             <ol>
@@ -298,7 +302,7 @@
           <div><b>{S.nx} × {S.ny}</b><span>Felder</span></div>
           <div><b>{S.plates}{S.spacers ? ' + ' + S.spacers : ''}</b><span>Platten{S.spacers ? ' + Leisten' : ''}</span>{#if (o.copies || 1) > 1}<span class="sub">{o.copies} {isDesk ? 'Raster' : 'Einsätze'}</span>{/if}</div>
           <div><b>{S.jobs}</b><span>{S.jobs === 1 ? 'Druckjob' : 'Druckjobs'}</span></div>
-          {#if step === 3}<div><b>{fmt(S.pla, 0)} g</b><span>PLA</span></div>{#if S.petg}<div><b>{fmt(S.petg, 0)} g</b><span>PETG{S.flips ? ` · ${S.flips} Platten` : ''}{S.flipSp ? ` + ${S.flipSp} Leisten` : ''}</span></div>{/if}{/if}
+          {#if step === 3}<div><b>{fmt(S.pla, 0)} g</b><span>PLA</span></div>{#if S.petg}<div><b>{fmt(S.petg, 0)} g</b><span>PETG</span></div>{/if}{/if}
         </div>
       {/if}
 
@@ -320,7 +324,7 @@
       <dl>{#each card.rows as [k, v]}<dt>{k}</dt><dd>{v}</dd>{/each}</dl>
       {#if card.j}
         {@const j = card.j}
-        <div class="cj">{jobName(R.stacks[j.i])}{j.of > 1 ? ` · Ebene ${j.level + 1}/${j.of}` : ''}{j.flip ? (j.petg ? ' · PETG kopfüber' : ' · kopfüber') : ''}
+        <div class="cj">{jobName(R.stacks[j.i])}{j.of > 1 ? ` · Ebene ${j.level + 1}/${j.of}` : ''}{j.flip ? ' · kopfüber' : ''}
           <button class="ghost" type="button" onclick={() => zipJob(j.i)} data-tip={TIPS.job}>↓</button></div>
       {/if}
     {:else}
@@ -338,18 +342,11 @@
         <button type="button" aria-pressed={o.spacerStyle === 'solid'} onclick={() => (o.spacerStyle = 'solid')}>voll</button>
       </div>
     </div>
-    <div class="f" data-tip={TIPS.sepStyle}>PETG-Trennschicht
-      <div class="seg wrap">
-        {#each [['grow', 'Aus Stegspitze'], ['flip', 'Wendeplatte'], ['perf', 'Perforation'], ['ring', 'Netz'], ['wedge', 'Netz + Keil'], ['sheet', 'Folie']] as [v, l]}
-          <button type="button" aria-pressed={o.sepStyle === v} onclick={() => (o.sepStyle = v as Opts['sepStyle'])}>{l}</button>
-        {/each}
-      </div>
-    </div>
     <div class="grid2">
       {#each PROFI as [k, l, mn, mx]}
-        {@const locked = k === 'spacerH' && o.stack && o.sepStyle === 'flip'}
+        {@const locked = k === 'spacerH' && o.stack && o.sepStyle !== 'perf'}
         {@const bedLock = (k === 'bedX' || k === 'bedY' || k === 'bedZ') && o.printer !== 'custom'}
-        <label class="f" data-tip={bedLock ? 'Kommt vom gewählten Drucker. Für eigene Maße im Schritt „Drucken“ „Eigener Drucker“ wählen.' : locked ? 'Bei Wendeplatte sind die Leisten so hoch wie eine Platte (4,4 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}{#if bedLock}<NumIn value={P.o[k] as number} min={mn} max={mx} disabled />{:else}<NumIn bind:value={o[k] as number} min={mn} max={mx} disabled={locked} />{/if}</label>
+        <label class="f" data-tip={bedLock ? 'Kommt vom gewählten Drucker. Für eigene Maße im Schritt „Drucken“ „Eigener Drucker“ wählen.' : locked ? 'Beim mehrfarbigen Stapel sind die Leisten so hoch wie eine Platte (4,4 mm), damit PLA und PETG auf denselben Höhen wechseln.' : TIPS[k]}>{l}{#if bedLock}<NumIn value={P.o[k] as number} min={mn} max={mx} disabled />{:else}<NumIn bind:value={o[k] as number} min={mn} max={mx} disabled={locked} />{/if}</label>
       {/each}
     </div>
     <p class="hint">Werte außerhalb der Grenzen werden beim Rechnen auf den nächsten gültigen Wert gesetzt. Die Bettmaße kommen vom gewählten Drucker (Schritt „Drucken“).</p>
@@ -411,7 +408,6 @@
   .f :global(input:disabled) { opacity: .45; }
   .f :global(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 0; }
   .seg { display: inline-flex; flex-wrap: nowrap; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; align-self: flex-start; }
-  .seg.wrap { flex-wrap: wrap; }
   .seg button { font: 500 13px var(--f-ui); background: transparent; color: var(--ink); border: 0; padding: 8px 11px; cursor: pointer; }
   .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); }
   .tog { display: flex; gap: 10px; align-items: center; font-size: 14px; cursor: pointer; }

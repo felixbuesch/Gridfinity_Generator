@@ -9,7 +9,7 @@ const BASE = {
   boxW: 600, boxD: 450, clearance: 1, cornerR: 3, minSpacer: 2, half: false,
   spacers: 'separate', spacerStyle: 'ladder', alignX: 'center', alignY: 'center',
   spacerH: 2.4, rail: 1.2, ribPitch: 40, bedX: 235, bedY: 256, bedZ: 256,
-  stack: true, sepStyle: 'grow', sepT: 0.6, overhang: 45, maxStack: 30, towerReserve: 40,
+  stack: true, sepStyle: 'petg', sepT: 0.6, maxStack: 30, towerReserve: 40,
 };
 const C = GF.CONN;
 let wasm;
@@ -39,6 +39,21 @@ function pairs(R) {
   }
   return out;
 }
+
+
+// Dreiecke, deren Normale steiler als 45° nach unten bzw. oben zeigt (ausgenommen die Fläche auf Höhe z0 bzw. z1)
+function faces(m, f) {
+  let n = 0;
+  for (let k = 0; k < m.f.length; k += 3) {
+    const p = [0, 1, 2].map((q) => [m.v[3 * m.f[k + q]], m.v[3 * m.f[k + q] + 1], m.v[3 * m.f[k + q] + 2]]);
+    const u = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]], w = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
+    const c = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]], l = Math.hypot(...c);
+    if (l > 1e-12 && f(c[2] / l, p.map((q) => q[2]))) n++;
+  }
+  return n;
+}
+const down = (m, z0) => faces(m, (nz, zs) => nz < -0.75 && Math.min(...zs) > z0 + 1e-6);
+const up = (m, z1) => faces(m, (nz, zs) => nz > 0.75 && Math.max(...zs) < z1 - 1e-6);
 
 describe('ohne Verbindungen bleibt alles wie bisher', () => {
   it.each([undefined, 'none'])('connect = %s: Netze identisch zu vorher, keine Brücken', (connect) => {
@@ -74,7 +89,7 @@ describe.each(['tabs', 'bridges'])('Verbindung %s', (connect) => {
 
   it('alle Netze geschlossen: Einzelteile, Stapel in jeder Trennart, Flachdruck, integrierte Ränder', () => {
     R.types.forEach((t) => chk(GF.plateMesh(t), 'Platte ' + t.label));
-    for (const extra of [{}, { sepStyle: 'flip' }, { sepStyle: 'ring' }, { sepStyle: 'wedge' }, { sepStyle: 'sheet' }, { stack: false }, { spacers: 'integrated' }, { spacers: 'integrated', sepStyle: 'flip' }, { boxW: 300, boxD: 200 }, { half: true, boxW: 523.5, boxD: 287.2 }, { copies: 2, boxW: 400, boxD: 300 }]) {
+    for (const extra of [{}, { sepStyle: 'perf' }, { stack: false }, { spacers: 'integrated' }, { spacers: 'integrated', sepStyle: 'perf' }, { boxW: 300, boxD: 200 }, { half: true, boxW: 523.5, boxD: 287.2 }, { copies: 2, boxW: 400, boxD: 300 }]) {
       const o2 = { ...o, ...extra }, R2 = GF.compute(o2);
       expect(R2.error).toBeUndefined();
       R2.stacks.forEach((s) => { const m = GF.stackMeshes(s, o2); chk(m.pla, JSON.stringify(extra) + ' PLA'); if (m.petg.f.length) chk(m.petg, JSON.stringify(extra) + ' PETG'); });
@@ -88,14 +103,14 @@ describe.each(['tabs', 'bridges'])('Verbindung %s', (connect) => {
   });
 
   it('stapel- und flachgedruckte Dateien passen aufs Bett', () => {
-    for (const extra of [{}, { sepStyle: 'flip' }, { boxW: 300, boxD: 200 }]) {
+    for (const extra of [{}, { sepStyle: 'perf' }, { boxW: 300, boxD: 200 }]) {
       const o2 = { ...o, ...extra }, R2 = GF.compute(o2);
       for (const s of R2.stacks) { const e = ext(GF.toBed(GF.stackMeshes(s, o2).pla, s)); expect(e.x1 - e.x0).toBeLessThanOrEqual(o2.bedX + 1e-6); expect(e.y1 - e.y0).toBeLessThanOrEqual(o2.bedY + 1e-6); }
     }
   });
 
   it('stackInfo passt weiter zu den echten Netzen', () => {
-    for (const sepStyle of ['grow', 'flip']) {
+    for (const sepStyle of ['petg', 'perf']) {
       const o2 = { ...o, sepStyle };
       for (const s of GF.compute(o2).stacks) { const m = GF.stackMeshes(s, o2), i = GF.stackInfo(s, o2); expect(i.pla).toBeCloseTo(GF.volume(m.pla), 6); expect(i.petg).toBeCloseTo(m.petg.f.length ? GF.volume(m.petg) : 0, 6); expect(i.height).toBeCloseTo(m.height, 9); }
     }
@@ -146,12 +161,28 @@ describe('Zapfen: Passung und Verriegelung', () => {
     expect(it2(along.map((x) => x * 0.4))).toBeLessThan(1e-6);
     expect(it2(along.map((x) => x * 0.45))).toBeGreaterThan(1e-4);
   });
-  it('hinter der Tasche bleiben mindestens 0,8 mm Wand bis zur Zellöffnung', () => {
-    expect(2.15 - (C.depth + C.fit)).toBeGreaterThanOrEqual(0.8 - 1e-9);
+  it('hinter der Tasche bleiben auf jeder Höhe mindestens 0,8 mm Wand bis zur Zellöffnung', () => {
     expect(C.pocketH).toBeLessThanOrEqual(2.5); // darüber wird der Rand schmaler
+    // Taschenöffnung am Plattenrand: bis 2,5 mm 2,15 tief, darauf linear bis 0,5 mm an der Oberkante (4,4)
+    const rib = (z) => (z <= 2.5 ? 2.15 : 2.15 - (z - 2.5) * (2.15 - 0.5) / (GF.H - 2.5));
+    for (const fit of [0, C.fit]) {
+      const D = C.depth + fit, sock = (z) => Math.max(0, Math.min(D, C.pocketH + D - z));
+      for (let z = 0.7; z <= GF.H; z += 0.05) if (sock(z) > 0) expect(rib(z) - sock(z), `fit ${fit}, z ${z.toFixed(2)}`).toBeGreaterThanOrEqual(0.8 - 1e-9);
+    }
+  });
+  it('Zapfen und Taschen gehen über die ganze nutzbare Höhe und haben keine waagerechte Decke (keine Stützen)', () => {
+    for (const t of R.types) {
+      const m = GF.plateMesh(t);
+      expect(down(m, 0), `Platte ${t.label}`).toBe(0);
+      // kopfüber gedruckt: nichts zeigt flach nach oben außer der Oberseite selbst
+      expect(up(m, GF.H), `Platte ${t.label} kopfüber`).toBe(0);
+    }
+    // Zapfen reicht bis 3,4 mm, Tasche bis 3,75 mm (Rand oben ist nur 0,5 mm breit, höher geht es nicht)
+    expect(C.height + C.depth).toBeCloseTo(3.4, 9);
+    expect(C.pocketH + C.depth + C.fit).toBeCloseTo(3.75, 9);
   });
   it('druckt ohne Stützen: überstehende Zapfen haben nach unten nur 45°-Flächen, außer direkt auf dem Bett', () => {
-    for (const sepStyle of ['grow', 'flip', 'sheet']) {
+    for (const sepStyle of ['petg', 'perf']) {
       const o2 = { ...o, sepStyle }, R2 = GF.compute(o2);
       let flatDown = 0, sloped = 0;
       for (const s of R2.stacks) {
@@ -229,14 +260,15 @@ describe('Brücken: Extrateile', () => {
     }
     expect(n).toBeGreaterThan(0);
   });
-  it('Brücken sind flach (2,2 mm) und brauchen keine Stützen', () => {
+  it('Brücken: Seitenwände 2,2 mm, darüber Satteldach unter 45° (nichts zeigt frei nach unten)', () => {
     const m = GF.bridgeMesh(0.15); let zmax = -Infinity;
     for (let i = 2; i < m.v.length; i += 3) zmax = Math.max(zmax, m.v[i]);
-    expect(zmax).toBeCloseTo(C.height, 9);
-    expect(C.height).toBeLessThan(C.pocketH);
+    expect(zmax).toBeCloseTo(C.height + C.depth, 9);
+    expect(C.height + C.depth).toBeLessThan(C.pocketH + C.depth + C.fit); // Luft unter dem Taschendach
+    expect(down(m, 0)).toBe(0);
   });
   it('auch flach gedruckt und mit mehreren Einsätzen werden die Brücken mit aufs Bett gelegt', () => {
-    for (const extra of [{ boxW: 300, boxD: 200 }, { boxW: 400, boxD: 300, copies: 2 }, { sepStyle: 'flip' }]) {
+    for (const extra of [{ boxW: 300, boxD: 200 }, { boxW: 400, boxD: 300, copies: 2 }, { sepStyle: 'perf' }]) {
       const R2 = GF.compute({ ...o, ...extra });
       const placed = R2.stacks.reduce((a, s) => a + s.bridges.reduce((b, e) => b + e.sp.type.n, 0), 0);
       expect(placed).toBe(R2.bridges.count ? R2.bridges.count + C.spare : 0);

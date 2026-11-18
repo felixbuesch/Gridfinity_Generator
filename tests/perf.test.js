@@ -9,7 +9,7 @@ const BASE = {
   boxW: 400, boxD: 300, clearance: 1, cornerR: 3, minSpacer: 2, half: false,
   spacers: 'separate', spacerStyle: 'ladder', alignX: 'center', alignY: 'center',
   spacerH: 2.4, rail: 1.2, ribPitch: 40, bedX: 235, bedY: 256, bedZ: 256,
-  stack: true, sepStyle: 'perf', sepT: 0.6, overhang: 45, maxStack: 30, towerReserve: 40,
+  stack: true, sepStyle: 'perf', sepT: 0.6, maxStack: 30, towerReserve: 40,
 };
 let wasm;
 beforeAll(async () => { wasm = await Module(); wasm.setup(); });
@@ -125,7 +125,7 @@ describe('Perforation: Einstellwerte', () => {
   });
   it('kein Prime-Tower: das ganze Bett wird genutzt', () => {
     expect(GF.twoMaterials(o)).toBe(false);
-    expect(GF.twoMaterials({ ...o, sepStyle: 'flip' })).toBe(true);
+    expect(GF.twoMaterials({ ...o, sepStyle: 'petg' })).toBe(true);
     const big = GF.compute({ ...o, boxW: 800, boxD: 500 });
     expect(Math.max(...big.stacks.map((x) => Math.min(x.bed.w, x.bed.d)))).toBeCloseTo(Math.min(o.bedX, o.bedY), 6);
   });
@@ -168,8 +168,8 @@ describe('Perforation: Einstellwerte', () => {
   });
 });
 
-describe('ohne Perforation bleibt alles wie bisher', () => {
-  it.each(['grow', 'flip', 'ring', 'wedge', 'sheet'])('%s: keine Punkte, Prime-Tower-Reserve bleibt', (sepStyle) => {
+describe('mehrfarbiger Stapel: keine Perforation', () => {
+  it.each(['petg'])('%s: keine Punkte, Prime-Tower-Reserve bleibt', (sepStyle) => {
     const o = { ...BASE, sepStyle }, R = GF.compute(o);
     for (const s of R.stacks) { expect(GF.stackMeshes(s, o).perf.f.length).toBe(0); expect(GF.perfList(s, o)).toHaveLength(0); expect(GF.stackInfo(s, o).perf).toBe(0); }
     expect(Math.min(R.stacks[0].bed.w, R.stacks[0].bed.d)).toBeLessThanOrEqual(o.bedX - o.towerReserve + 1e-6);

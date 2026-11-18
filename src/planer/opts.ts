@@ -8,7 +8,7 @@ export interface Opts {
   spacers: 'separate' | 'integrated'; spacerStyle: 'ladder' | 'solid'; alignX: Align; alignY: Align;
   spacerH: number; rail: number; ribPitch: number; bedX: number; bedY: number; bedZ: number;
   printer: string; connect: 'none' | 'tabs' | 'bridges'; connFit: number;
-  copies: number; stack: boolean; sepStyle: 'grow' | 'ring' | 'wedge' | 'sheet' | 'flip' | 'perf'; perfGap: number; perfDot: number; perfPitch: number; sepT: number; overhang: number; maxStack: number; towerReserve: number;
+  copies: number; stack: boolean; sepStyle: 'petg' | 'perf'; perfGap: number; perfDot: number; perfPitch: number; sepT: number; overhang: number; maxStack: number; towerReserve: number;
 }
 
 export const defaults = (): Opts => ({ ...(DEFAULTS as Opts) });
@@ -20,6 +20,7 @@ export function loadOpts(): Opts {
     const saved = JSON.parse(localStorage.getItem(STORE) || '{}') || {};
     Object.assign(o, saved);
     // ältere Speicherstände kennen noch keinen Drucker: aus den Bettmaßen ableiten, sonst „eigener Drucker“
+    if (o.sepStyle !== 'perf') o.sepStyle = 'petg'; // ältere Trennarten gibt es nicht mehr
     if (!saved.printer && ('bedX' in saved || 'bedY' in saved || 'bedZ' in saved)) o.printer = GF.printerFor(o);
   } catch { /* ohne Speicher */ }
   return o;
@@ -33,7 +34,7 @@ export const MAX_DIM = 2000; // mm je Richtung; größer wird mit Hinweis abgele
 export function clean(o: Opts) {
   const d = defaults(), r: Record<string, unknown> = { ...o };
   for (const k of Object.keys(d) as (keyof Opts)[]) if (typeof d[k] === 'number') r[k] = num(o[k], d[k] as number);
-  const c = GF.applyPrinter(r) as unknown as Opts & { wedgeDepth: number };
+  const c = GF.applyPrinter(r) as unknown as Opts;
   c.boxW = lim(c.boxW, 0, 100000); c.boxD = lim(c.boxD, 0, 100000);
   c.clearance = lim(c.clearance, 0, 20); c.cornerR = lim(c.cornerR, 0, 50); c.minSpacer = lim(c.minSpacer, 0, 42);
   c.bedX = lim(c.bedX, 50, 1000); c.bedY = lim(c.bedY, 50, 1000); c.bedZ = lim(c.bedZ, 10, 1000);
@@ -46,7 +47,8 @@ export function clean(o: Opts) {
   c.perfGap = lim(c.perfGap, 0.1, 1.2); c.perfDot = lim(c.perfDot, 0.4, 3); c.perfPitch = lim(c.perfPitch, 2, 30);
   if (!['none', 'tabs', 'bridges'].includes(c.connect)) c.connect = 'none';
   c.rail = lim(c.rail, 0.8, 20); c.ribPitch = lim(c.ribPitch, 8, 500);
-  c.wedgeDepth = c.sepStyle === 'wedge' ? 1 : 0;
+  // ältere Trennarten (Stegspitze, Wendeplatte, Netz, Folie) gibt es nicht mehr: sie werden zur PETG-Zwischenschicht
+  if (c.sepStyle !== 'perf') c.sepStyle = 'petg';
   return c;
 }
 
@@ -79,16 +81,14 @@ export const TIPS: Record<string, string> = {
   bedX: 'Nutzbare Breite des Druckbetts. X2D mit beiden Düsen: 235 mm.',
   bedY: 'Nutzbare Tiefe des Druckbetts. X2D: 256 mm.',
   bedZ: 'Maximale Druckhöhe. Begrenzt, wie viele Platten in einen Stapel passen.',
-  stack: 'Alle Platten eines Einsatzes in einem Druck übereinander, getrennt durch PETG. Ein Einsatz = ein Druckjob.',
-  sepT: 'Dicke der PETG-Basisschicht zwischen zwei Platten. 0,6 mm sind drei Schichten bei 0,2 mm Schichthöhe.',
-  sepStyle: 'Aus Stegspitze: PETG startet oben auf den Stegen und wächst ohne Stützen schräg nach außen bis unter die nächste Platte. Wendeplatte: jede zweite Grundplatte wird aus PETG kopfüber gedruckt und ist selbst die Trennung, kein PETG-Abfall. Netz, Netz + Keil, Folie: ältere Formen.',
-  flip: 'Jede zweite Grundplatte wird aus PETG kopfüber gedruckt. Sie trennt die PLA-Platten und ist danach umgedreht eine ganz normale Grundplatte. Kein Abfall, halbe Stapelhöhe.',
-  overhang: 'Wie flach das PETG nach außen wachsen darf, gemessen von der Senkrechten. 45° druckt sicher ohne Stützen.',
+  stack: 'Einzeln: jede Platte ist ein eigener Druck, nur PLA. Stapel einfarbig: alle Platten in einem Druck übereinander, nur PLA, getrennt durch einen Luftspalt mit Sollbruch-Punkten. Stapel mehrfarbig: getrennt durch eine dünne PETG-Schicht, braucht AMS oder zwei Düsen. In beiden Stapeln liegt jede zweite Platte kopfüber.',
+  sepT: 'Dicke der PETG-Zwischenschicht zwischen zwei Platten. 0,6 mm sind drei Schichten bei 0,2 mm Schichthöhe.',
   maxStack: 'Höchstens so viele Platten pro Druckjob. Weniger heißt kürzere Jobs, aber evtl. mehr Druckjobs.',
   towerReserve: 'Platz, der auf dem Bett für den Prime-Tower frei bleibt. Er wird beim Wechsel PLA/PETG gebraucht.',
   connect: 'Hält die einzelnen Grundplatten an der Unterseite zusammen. Zapfen: Schwalbenschwanz direkt an der Platte, greift in die Nachbarplatte. Brücken: kleine Extrateile, die von unten in Taschen beider Platten gesteckt werden; die Platten selbst bleiben ohne Überstand. Oberseite und Außenrand bleiben gleich.',
   connFit: 'Luft zwischen Zapfen bzw. Brücke und Tasche je Seite. 0,15 mm sitzt bei 0,4-mm-Düse stramm, lässt sich aber noch von Hand fügen. Klemmt es: größer. Wackelt es: kleiner.',
-  perf: 'Ein Material, Perforation: alles aus PLA, kein PETG, kein Prime-Tower. Die Platten liegen abwechselnd kopfüber mit einem kleinen Luftspalt. Dazwischen stehen nur Punkte als Sollbruchstellen, an denen man die Platten einzeln abzieht. Noch nicht am Drucker erprobt: zuerst die Testdatei drucken.',
+  perf: 'Stapel einfarbig: alles aus PLA, kein PETG, kein Prime-Tower. Die Platten liegen abwechselnd kopfüber mit einem kleinen Luftspalt. Dazwischen stehen nur Punkte als Sollbruchstellen, an denen man die Platten einzeln abzieht. Noch nicht am Drucker erprobt.',
+  petg: 'Stapel mehrfarbig: zwischen zwei Platten liegt eine dünne PETG-Schicht, die kaum am PLA haftet. Jede zweite Platte liegt kopfüber, so liegen immer gleiche Flächen aufeinander (Füße auf Füßen, Stege auf Stegen). Braucht AMS oder zwei Düsen und einen Prime-Tower.',
   perfGap: 'Luftspalt zwischen zwei Platten. Muss ein Vielfaches der Schichthöhe sein: 0,4 mm sind zwei Schichten à 0,2 mm. Größer löst sich leichter, die Unterseite wird aber rauer.',
   perfDot: 'Durchmesser der Punkte. 0,8 mm sind zwei Bahnen einer 0,4-mm-Düse. Kleiner druckt der Slicer nicht sicher, größer hält fester.',
   perfPitch: 'Abstand der Punkte. Wird je Zelle auf einen gleichmäßigen Teiler gerundet. Kleiner stützt besser und hält fester, größer löst sich leichter.',
@@ -98,7 +98,7 @@ export const TIPS: Record<string, string> = {
   copiesDesk: 'So oft wird das ganze Raster gedruckt, z. B. für mehrere gleiche Schreibtische. Alle Exemplare werden zusammen so dicht wie möglich aufs Bett gepackt.',
   copies: 'So oft wird der ganze Einsatz mit Rahmen (Platten + Leisten) gedruckt, z. B. für mehrere gleiche Schubladen. Alle Exemplare werden zusammen so dicht wie möglich aufs Bett gepackt.',
   flat: 'Alle Platten passen nebeneinander auf ein Druckbett. Dann wird nicht gestapelt: nur PLA, kein PETG, kein Prime-Tower.',
-  profi: 'Alle weiteren Einstellungen: Leistenform, Drucker, PETG-Trennschicht.',
+  profi: 'Alle weiteren Einstellungen: Leistenform, Bett, Verbindung, Stapeln.',
   zip: 'Alle Druckbetten, Einzelteile und eine Anleitung als STL/3MF in einem ZIP.',
   job: 'Nur diese Druckdatei als ZIP laden (PLA- und PETG-STL plus 3MF fürs Bambu Studio).',
   view: 'Ziehen dreht, Mausrad oder zwei Finger zoomen, Rechtsklick verschiebt.',

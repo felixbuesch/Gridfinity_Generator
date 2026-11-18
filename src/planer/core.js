@@ -36,14 +36,12 @@ export function info(P, i) { P._info = P._info || []; return P._info[i] || (P._i
 export function stats(P) {
   const { R, o } = P;
   if (R.error) return null;
-  // Material aus den fertigen Druckbetten: PLA (Platten + Leisten) und PETG (Trennung bzw. Wendeplatten)
+  // Material aus den fertigen Druckbetten: PLA (Platten + Leisten) und PETG (Zwischenschichten)
   let pla = 0, petg = 0;
   R.stacks.forEach((s, i) => { const m = info(P, i); pla += m.pla + (m.perf || 0); petg += m.petg; });
-  const flips = o.sepStyle === 'perf' ? 0 : R.stacks.reduce((a, s) => a + s.items.filter((it) => it.flip).length, 0);
-  const flipSp = GF.flipMode(o) ? R.stacks.reduce((a, s) => a + s.spacers.filter((e) => (e.level || 0) % 2).length, 0) : 0;
   return {
     nx: cellCount(R.AX.cells), ny: cellCount(R.AY.cells), plates: R.pieces.length, spacers: R.spacers.list.length, jobs: R.stacks.length,
-    pla: pla * PLA_DENSITY, petg: petg * PETG_DENSITY, flips, flipSp,
+    pla: pla * PLA_DENSITY, petg: petg * PETG_DENSITY,
   };
 }
 
@@ -54,15 +52,14 @@ export function jobOf(P, sel) {
     const p = R.pieces[sel.idx];
     for (let i = 0; i < R.stacks.length; i++) {
       const k = R.stacks[i].items.findIndex((it) => it.p === p);
-      if (k >= 0) return { i, level: k, of: R.stacks[i].items.length, flip: !!R.stacks[i].items[k].flip, petg: !!R.stacks[i].items[k].flip && P.o.sepStyle !== 'perf' };
+      if (k >= 0) return { i, level: k, of: R.stacks[i].items.length, flip: !!R.stacks[i].items[k].flip };
     }
     return null;
   }
   const sp = R.spacers.list[sel.idx], i = R.stacks.indexOf(sp.job);
   const e = sp.job.spacers.find((q) => q.sp === sp);
   const level = e ? e.level || 0 : 0;
-  const fl = GF.flipMode(P.o) && level % 2 === 1;
-  return { i, level, of: sp.job.spacers.filter((q) => e && q.x === e.x && q.y === e.y).length, spacer: true, flip: fl, petg: fl };
+  return { i, level, of: sp.job.spacers.filter((q) => e && q.x === e.x && q.y === e.y).length, spacer: true, flip: false };
 }
 export const jobName = (st) => (st.items.length ? (st.items.length > 1 ? 'Stapel ' : 'Druckjob ') + st.label : 'Leisten-Bett ' + st.label);
 export const bridgeCount = (st) => (st.bridges || []).reduce((a, e) => a + e.sp.type.n, 0);
@@ -88,7 +85,7 @@ export function filesFor(P, key) {
     // Bambu-Studio-Projekt: PLA-Teil auf Filament 1, PETG-Teil auf Filament 2
     // Lage in der Datei: mittig auf der Druckfläche des gewählten Druckers (bei zwei Materialien bleibt rechts Platz für den Prime-Tower)
     const pr = GF.printerOf(P.o), place = { bed: GF.printArea(P.o, R.flat), meta: { 'GridfinityPlaner:Printer': pr.name, 'GridfinityPlaner:Bed': `${fnum(pr.bedX)}x${fnum(pr.bedY)}x${fnum(pr.bedZ)}` } };
-    out.push([base + '.3mf', GF.threeMF([{ name: base + ' PLA', mesh: pla0, extruder: 1 }, ...(perf ? [{ name: base + ' Perforation (PLA)', mesh: perf, extruder: 1 }] : []), { name: base + (P.o.sepStyle === 'flip' ? ' PETG Wendeplatten' : ' PETG Trennschicht'), mesh: petg, extruder: 2 }], base, place)]);
+    out.push([base + '.3mf', GF.threeMF([{ name: base + ' PLA', mesh: pla0, extruder: 1 }, ...(perf ? [{ name: base + ' Perforation (PLA)', mesh: perf, extruder: 1 }] : []), { name: base + ' PETG Zwischenschicht', mesh: petg, extruder: 2 }], base, place)]);
   }
   return out;
 }
@@ -104,19 +101,19 @@ export function readme(P, use) {
   L.push(`${use ? use.area : 'Innenmaß'}: ${mm(o.boxW)} × ${mm(o.boxD)} mm, Spiel je Achse ${mm(o.clearance)} mm, Raster liegt: ${posText(o.alignX, o.alignY)}`);
   if (n > 1) L.push(`Anzahl: ${n} gleiche Einsätze. Jede Platte und Leiste unten gibt es ${n}-mal (Exemplar 1 bis ${n}).`);
   L.push(`Raster: ${cellCount(R.AX.cells)} × ${cellCount(R.AY.cells)} Zellen (${R.AX.cells.map((c) => mm(c)).join(' + ')} / ${R.AY.cells.map((c) => mm(c)).join(' + ')} mm)`);
-  L.push(`Abstandshalter links/rechts: ${mm(R.AX.mLow)} / ${mm(R.AX.mHigh)} mm, vorne/hinten: ${mm(R.AY.mLow)} / ${mm(R.AY.mHigh)} mm (${o.spacers === 'separate' ? 'separate Leisten, ' + (o.spacerStyle === 'solid' ? 'voll' : 'Leiter') + ', Höhe ' + mm(GF.spacerHeight(o)) + ' mm' : 'in Platten integriert'})`);
+  L.push(`Abstandshalter links/rechts: ${mm(R.AX.mLow)} / ${mm(R.AX.mHigh)} mm, vorne/hinten: ${mm(R.AY.mLow)} / ${mm(R.AY.mHigh)} mm (${o.spacers === 'separate' ? 'separate Leisten, ' + (o.spacerStyle === 'solid' ? 'voll' : 'Leiter') + ', Höhe ' + mm(GF.spacerHeight(stacked ? o : { ...o, stack: false })) + ' mm' : 'in Platten integriert'})`);
   if (o.connect === 'tabs') L.push(`Verbindung: Zapfen (Schwalbenschwanz) an der Unterseite der Stoßkanten, Spiel ${mm(o.connFit)} mm je Seite. Zapfen rechts und hinten, Taschen links und vorne. Platten von oben ineinander setzen.`);
   if (o.connect === 'bridges') L.push(`Verbindung: ${R.bridges.count} Brücken (${mm(R.bridges.size[0], 1)} × ${mm(R.bridges.size[1], 1)} × ${mm(R.bridges.size[2], 1)} mm) plus ${R.bridges.total - R.bridges.count} Reserve, Spiel ${mm(o.connFit)} mm je Seite. Brücken an den Stoßkanten auf den Boden legen und die Platten darauf drücken, oder von unten in die Taschen stecken.`);
   const pr = GF.printerOf(o);
   L.push(`Drucker: ${pr.name}. In Bambu Studio diesen Drucker auswählen, die Datei stellt ihn nicht selbst ein.`);
-  L.push(`Druckbett: ${mm(o.bedX)} × ${mm(o.bedY)} × ${mm(o.bedZ)} mm${stacked ? ', Reserve Prime-Tower ' + mm(o.towerReserve) + ' mm' : ''}`, '');
+  L.push(`Druckbett: ${mm(o.bedX)} × ${mm(o.bedY)} × ${mm(o.bedZ)} mm${stacked && GF.twoMaterials(o) ? ', Reserve Prime-Tower ' + mm(o.towerReserve) + ' mm' : ''}`, '');
   const ox = R.AX.gapLow, oy = R.AY.gapLow, one = R.pieces.filter((p) => !p.copy);
   L.push('Platten (Position = linke vordere Ecke, gemessen ab linker und vorderer Wand, mm):');
   one.forEach((p) => L.push(`  ${p.type.label}: ${mm(p.w)} × ${mm(p.d)} bei x = ${mm(ox + p.x)}, y = ${mm(oy + p.y)}${n > 1 ? `  (${n}×)` : ''}`));
   const sp1 = R.spacers.list.filter((x) => !x.copy);
   if (sp1.length) { L.push('', 'Leisten:'); sp1.forEach((x) => L.push(`  ${x.type.label} (${side[x.side]}): ${mm(x.x1 - x.x0)} × ${mm(x.y1 - x.y0)} bei x = ${mm(ox + x.x0)}, y = ${mm(oy + x.y0)}${n > 1 ? `  (${n}×)` : ''}`)); }
   L.push('', 'Druckbetten (Ordner druckbetten/, je Datei ein Druck; Leisten liegen schon neben den Platten):');
-  R.stacks.forEach((x) => L.push(`  ${x.label}: ${x.items.map((it) => it.p.type.label + (n > 1 ? `/${(it.p.copy || 0) + 1}` : '') + (it.flip ? ' (PETG, kopfüber)' : '') + (it.rot ? ' (gedreht)' : '')).join(' + ') || '-'}${x.items.length > 1 && !x.flat ? ' (unten -> oben)' : ''}${x.spacers.length ? ' + ' + x.spacers.length + ' Leisten daneben' : ''}`));
+  R.stacks.forEach((x) => L.push(`  ${x.label}: ${x.items.map((it) => it.p.type.label + (n > 1 ? `/${(it.p.copy || 0) + 1}` : '') + (it.flip ? ' (kopfüber)' : '') + (it.rot ? ' (gedreht)' : '')).join(' + ') || '-'}${x.items.length > 1 && !x.flat ? ' (unten -> oben)' : ''}${x.spacers.length ? ' + ' + x.spacers.length + ' Leisten daneben' : ''}`));
   if (n > 1) L.push('  (Platte/Nummer = Plattentyp/Exemplar)');
   L.push('', 'Bambu Studio:');
   if (!stacked) {
@@ -133,12 +130,11 @@ export function readme(P, use) {
         '  4. Nach dem Druck die Platten einzeln von oben abhebeln (Spachtel in den Spalt), jede zweite umdrehen, Punktreste abbrechen.');
       return L.join('\r\n');
     }
-    if (o.sepStyle === 'flip') L.push('  Stapel mit Wendeplatten: Jede zweite Grundplatte ist aus PETG und liegt kopfüber im Stapel.', '  Sie trennt die PLA-Platten und wird nach dem Druck einfach umgedreht: dann ist sie eine normale Grundplatte für den Einsatz.');
-    else L.push(`  Stapel mit PETG-Trennschicht ${mm(o.sepT)} mm, Form: ${({ sheet: 'durchgehende Folie', wedge: 'Netz mit 45°-Keil', ring: 'Netz unter den Stegen', grow: `wächst aus der Stegkante mit ${mm(o.overhang, 0)}° Überhang` })[o.sepStyle]}.`);
+    L.push(`  Stapel mehrfarbig: zwischen zwei Platten liegt eine PETG-Zwischenschicht von ${mm(o.sepT)} mm.`, '  Jede zweite Platte liegt kopfüber, so liegen immer Füße auf Füßen oder Stegoberkanten auf Stegoberkanten.');
     L.push('  1. S*.3mf öffnen (PLA-Teil = Filament 1, PETG-Teil = Filament 2).',
       '     Ausweichweg: S*_PLA.stl und S*_PETG.stl zusammen importieren und "als ein Objekt mit mehreren Teilen" laden.',
       pr.nozzles > 1 ? '  2. Filament 1 = PLA auf die linke Düse, Filament 2 = PETG auf die rechte Düse.' : '  2. Filament 1 = PLA, Filament 2 = PETG (beide im AMS).',
-      '  3. Stützen aus, Prime-Tower an, Schichthöhe 0,2 mm.', '  4. Nach dem Druck die Platten von oben abziehen' + (o.sepStyle === 'flip' ? ', PETG-Platten umdrehen.' : ', PETG-Reste abziehen.'));
+      '  3. Stützen aus, Prime-Tower an, Schichthöhe 0,2 mm.', '  4. Nach dem Druck die Platten von oben abziehen, PETG-Reste abziehen, die kopfüber gedruckten Platten umdrehen.');
   }
   return L.join('\r\n');
 }

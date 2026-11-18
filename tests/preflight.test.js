@@ -8,7 +8,7 @@ import { plan, filesFor } from '../src/planer/core.js';
 const B = {
   boxW: 400, boxD: 300, clearance: 1, cornerR: 3, minSpacer: 2, half: false, spacers: 'separate', spacerStyle: 'ladder',
   alignX: 'center', alignY: 'center', spacerH: 2.4, rail: 1.2, ribPitch: 40, bedX: 235, bedY: 256, bedZ: 256,
-  stack: true, sepStyle: 'grow', sepT: 0.6, overhang: 45, maxStack: 30, towerReserve: 40,
+  stack: true, sepStyle: 'petg', sepT: 0.6, maxStack: 30, towerReserve: 40,
 };
 const LAYER = 0.2;
 let wasm;
@@ -25,7 +25,7 @@ function flatLevels(m) {
   }
   return [...s].filter(([, a]) => a > 0.05).map(([z]) => z);
 }
-const STYLES = ['grow', 'flip', 'perf', 'ring', 'wedge', 'sheet'];
+const STYLES = ['petg', 'perf'];
 const VARIANTS = [{}, { connect: 'tabs', boxW: 600, boxD: 450 }, { connect: 'bridges', boxW: 600, boxD: 450 }, { cornerR: 12, alignX: 'start', alignY: 'start' }, { spacers: 'integrated', boxW: 523.5, boxD: 287.2 }];
 
 describe.each(STYLES)('Stapel %s', (sepStyle) => {
@@ -70,7 +70,7 @@ describe('Exportdateien', () => {
     expect(new DataView(stl.buffer).getUint32(80, true)).toBe((m.pla.f.length + m.perf.f.length) / 3);
   });
   it('jede 3MF verweist nur auf vorhandene Punkte (Indizes im Bereich), Dreiecke nicht entartet', () => {
-    for (const x of [{ sepStyle: 'flip', connect: 'tabs', boxW: 600, boxD: 450 }, { sepStyle: 'perf', connect: 'bridges', boxW: 600, boxD: 450, printer: 'a1mini' }]) {
+    for (const x of [{ sepStyle: 'petg', connect: 'tabs', boxW: 600, boxD: 450 }, { sepStyle: 'perf', connect: 'bridges', boxW: 600, boxD: 450, printer: 'a1mini' }]) {
       const P = plan(clean({ ...defaults(), ...x }));
       P.R.stacks.forEach((s, i) => {
         const files = Object.fromEntries(filesFor(P, 'S:' + i)), z = unzip(files[Object.keys(files).find((n) => n.endsWith('.3mf'))]);
@@ -86,7 +86,7 @@ describe('Exportdateien', () => {
 
 describe('Stapelreihenfolge bei Wandrundungen', () => {
   it('kleinere Platte liegt nicht über der beschnittenen Ecke der größeren', () => {
-    const o = { ...B, cornerR: 12, alignX: 'start', alignY: 'start', sepStyle: 'flip' }, R = GF.compute(o), s = R.stacks[0];
+    const o = { ...B, cornerR: 12, alignX: 'start', alignY: 'start', sepStyle: 'petg' }, R = GF.compute(o), s = R.stacks[0];
     expect(s.items[0].p.clips.length).toBeGreaterThan(0);        // unterste Platte hat die Rundung
     expect(s.items.slice(1).some((it) => it.dx > 0 || it.dy > 0)).toBe(true); // eine Platte darüber weicht aus
   });

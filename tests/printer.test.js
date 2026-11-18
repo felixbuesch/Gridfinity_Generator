@@ -50,7 +50,7 @@ describe('Druckerprofile', () => {
 
 describe.each([['a1mini'], ['a1'], ['p1s'], ['x2d'], ['custom']])('Drucker %s läuft durch die ganze Kette', (printer) => {
   const extra = printer === 'custom' ? { bedX: 300, bedY: 200, bedZ: 150 } : {};
-  for (const [w, d, sepStyle, connect] of [[400, 300, 'grow', 'none'], [523.5, 287.2, 'flip', 'tabs'], [200, 120, 'grow', 'none'], [600, 450, 'perf', 'bridges']]) {
+  for (const [w, d, sepStyle, connect] of [[400, 300, 'petg', 'none'], [523.5, 287.2, 'perf', 'tabs'], [200, 120, 'petg', 'none'], [600, 450, 'perf', 'bridges']]) {
     it(`${w} × ${d}, ${sepStyle}, ${connect}: Platten, Stapelhöhe und Exportdateien passen aufs Bett`, () => {
       const o = opts({ printer, ...extra, boxW: w, boxD: d, sepStyle, connect }), P = plan(o), R = P.R;
       expect(R.error).toBeUndefined();
@@ -95,7 +95,7 @@ describe('Bettgröße entscheidet über Aufteilung und Stapeln', () => {
     expect(GF.printArea({ ...o, sepStyle: 'perf' }, false)).toEqual([256, 256]);
   });
   it('Anleitung nennt Düsen nur beim Zwei-Düsen-Drucker', () => {
-    const txt = (printer) => readme(plan(opts({ printer, boxW: 600, boxD: 450, sepStyle: 'flip' })), null);
+    const txt = (printer) => readme(plan(opts({ printer, boxW: 600, boxD: 450, sepStyle: 'petg' })), null);
     expect(txt('x2d')).toMatch(/linke Düse/); expect(txt('a1')).not.toMatch(/linke Düse/); expect(txt('a1')).toMatch(/AMS/);
   });
 });

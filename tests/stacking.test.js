@@ -6,7 +6,7 @@ import GF from '../src/gf.js';
 const BASE = {
   clearance: 1, cornerR: 3, minSpacer: 2, half: false, spacers: 'separate', spacerStyle: 'ladder',
   alignX: 'center', alignY: 'center', spacerH: 2.4, rail: 1.2, ribPitch: 40, bedX: 235, bedY: 256, bedZ: 256,
-  stack: true, sepStyle: 'grow', sepT: 0.6, overhang: 45, maxStack: 30, towerReserve: 40,
+  stack: true, sepStyle: 'petg', sepT: 0.6, maxStack: 30, towerReserve: 40,
 };
 const SIZES = [[400, 300], [300, 200], [560, 300], [600, 450], [150, 100], [800, 500], [523.5, 287.2], [1200, 600], [380, 380], [700, 120]];
 
@@ -19,7 +19,7 @@ function placed(it) {
 }
 const close = (a, b) => Math.abs(a - b) < 1e-6;
 
-describe.each(SIZES.flatMap(([w, d]) => [[w, d, 'grow'], [w, d, 'flip']]))('Einsatz %s × %s mm, %s', (w, d, sepStyle) => {
+describe.each(SIZES.flatMap(([w, d]) => [[w, d, 'petg'], [w, d, 'perf']]))('Einsatz %s × %s mm, %s', (w, d, sepStyle) => {
   const o = { ...BASE, boxW: w, boxD: d, sepStyle }, R = GF.compute(o);
   const plateJobs = R.stacks.filter((s) => s.items.length);
 
@@ -53,50 +53,83 @@ describe('gedrehte Platten', () => {
   });
 });
 
-describe('Wendeplatte (PETG-Platte kopfüber)', () => {
-  const o = { ...BASE, boxW: 800, boxD: 500, sepStyle: 'flip' }, R = GF.compute(o), s = R.stacks[0];
+describe('Stapel mehrfarbig: PETG-Zwischenschicht, jede zweite Platte kopfüber', () => {
+  const o = { ...BASE, boxW: 800, boxD: 500, sepStyle: 'petg' }, R = GF.compute(o), s = R.stacks[0];
+  const per = GF.H + o.sepT;
 
-  it('jede zweite Platte ist kopfüber aus PETG, sonst gibt es kein PETG zwischen den Platten', () => {
+  it('jede zweite Platte liegt kopfüber, alle Platten sind PLA', () => {
+    expect(s.items.length).toBeGreaterThan(2);
     s.items.forEach((it, k) => expect(!!it.flip, `Ebene ${k + 1}`).toBe(k % 2 === 1));
   });
 
-  it('Platten liegen direkt aufeinander: Höhe = Anzahl × H', () => {
-    const plates = s.items.length * GF.H, m = GF.stackMeshes({ ...s, spacers: [] }, o);
-    expect(m.height).toBeCloseTo(plates, 6);
+  it('Höhe = Platten + PETG-Schichten dazwischen', () => {
+    const n = s.items.length, m = GF.stackMeshes({ ...s, spacers: [] }, o);
+    expect(m.height).toBeCloseTo(n * GF.H + (n - 1) * o.sepT, 6);
   });
 
-  it('PETG-Netz enthält genau die gewendeten Platten (gleiches Volumen wie aufrecht)', () => {
-    const m = GF.stackMeshes({ ...s, spacers: [] }, o);
-    const flipVol = s.items.filter((it) => it.flip).reduce((a, it) => a + GF.volume(GF.plateMesh(it.p.type)), 0);
-    expect(GF.volume(m.petg)).toBeCloseTo(flipVol, 4);
+  it('PETG liegt nur in den Fugen zwischen den Platten, genau sepT dick', () => {
+    const m = GF.stackMeshes({ ...s, spacers: [] }, o), V = m.petg.v;
+    for (let i = 2; i < V.length; i += 3) {
+      const k = Math.ceil(V[i] / per - 1e-9); // Fuge unter Ebene k: von k · per − sepT bis k · per
+      expect(V[i]).toBeGreaterThanOrEqual(k * per - o.sepT - 1e-6); expect(V[i]).toBeLessThanOrEqual(k * per + 1e-6);
+      expect(k).toBeGreaterThanOrEqual(1); expect(k).toBeLessThan(s.items.length);
+    }
+  });
+
+  it('Stegoberkanten auf Stegoberkanten, Füße auf Füßen: PETG so groß wie die aufliegende Fläche', () => {
+    const m = GF.stackMeshes({ ...s, spacers: [] }, o), sep = GF.volume(m.petg);
+    let want = 0;
+    s.items.forEach((it, k) => {
+      if (!k) return;
+      const one = new GF.Mesh(); GF.addSeparator(one, it.p.type.tiles, 0, o.sepT, !!it.flip); want += GF.volume(one);
+    });
+    expect(sep).toBeCloseTo(want, 4);
+    // kopfüber liegt die Platte nur mit den schmalen Stegoberkanten auf, aufrecht mit den breiten Füßen
+    const t = s.items[1].p.type.tiles, a = new GF.Mesh(), b = new GF.Mesh();
+    GF.addSeparator(a, t, 0, 1, true); GF.addSeparator(b, t, 0, 1, false);
+    expect(GF.volume(a)).toBeLessThan(GF.volume(b));
+    expect(GF.volume(a)).toBeGreaterThan(0);
+  });
+
+  it('PETG berührt PLA nur flächig, keine Durchdringung', () => {
+    const m = GF.stackMeshes({ ...s, spacers: [] }, o), V = m.pla.v;
+    // keine PLA-Ecke liegt im Inneren einer Fuge
+    for (let i = 2; i < V.length; i += 3) {
+      const r = V[i] % per;
+      expect(r > GF.H + 1e-6 && r < per - 1e-6, `z = ${V[i]}`).toBe(false);
+    }
+  });
+
+  it('stackInfo zählt das gleiche PETG wie die Netze', () => {
+    const m = GF.stackMeshes(s, o), info = GF.stackInfo(s, o);
+    expect(info.petg).toBeCloseTo(GF.volume(m.petg), 4);
+    expect(info.pla).toBeCloseTo(GF.volume(m.pla), 4);
   });
 });
 
-it('Wendeplatte mit integrierten Rändern wechselt ebenfalls das Material', () => {
-  const o = { ...BASE, boxW: 523.5, boxD: 287.2, spacers: 'integrated', sepStyle: 'flip' };
+it('mehrfarbig mit integrierten Rändern: ebenfalls jede zweite Platte kopfüber', () => {
+  const o = { ...BASE, boxW: 523.5, boxD: 287.2, spacers: 'integrated', sepStyle: 'petg' };
   for (const st of GF.compute(o).stacks) st.items.forEach((it, k) => expect(!!it.flip).toBe(k % 2 === 1));
 });
 
-describe('Wendeplatte: Leisten', () => {
-  const o = { ...BASE, boxW: 400, boxD: 300, sepStyle: 'flip' }, R = GF.compute(o), s = R.stacks[0];
+describe('Stapel mehrfarbig: Leisten', () => {
+  const o = { ...BASE, boxW: 400, boxD: 300, sepStyle: 'petg' }, R = GF.compute(o), s = R.stacks[0];
 
   it('Leisten sind so hoch wie eine Platte', () => {
     for (const t of R.spacers.types) expect(t.h).toBeCloseTo(GF.H, 6);
   });
 
-  it('Leisten-Türme wechseln PLA/PETG auf denselben Höhen wie die Platten, ohne Zwischenlage', () => {
-    const only = (sp) => GF.stackMeshes({ ...s, items: [], spacers: sp }, o);
-    const lv = (k) => s.spacers.filter((e) => (e.level || 0) === k);
-    expect(lv(1).length).toBeGreaterThan(0);
-    // Ebene 0 nur PLA, Ebene 1 nur PETG
-    expect(only(lv(0)).petg.f.length).toBe(0);
-    expect(only(lv(1)).pla.f.length).toBe(0);
-    const m = only(s.spacers), top = Math.max(...s.spacers.map((e) => e.level || 0)) + 1;
-    expect(m.height).toBeCloseTo(top * GF.H, 6);
+  it('PETG der Leisten-Türme liegt auf denselben Höhen wie das der Platten (wenige Filamentwechsel)', () => {
+    const per = GF.H + o.sepT, zs = (m) => new Set(Array.from({ length: m.petg.v.length / 3 }, (_, i) => +m.petg.v[3 * i + 2].toFixed(4)));
+    const sp = GF.stackMeshes({ ...s, items: [] }, o), pl = GF.stackMeshes({ ...s, spacers: [] }, o);
+    expect(s.spacers.some((e) => e.level > 0)).toBe(true);
+    const plateZ = zs(pl);
+    for (const z of zs(sp)) expect(plateZ.has(z), `z = ${z}`).toBe(true);
+    expect(sp.height).toBeLessThanOrEqual(pl.height + 1e-6 + per * 10);
   });
 
-  it('ohne Wendeplatte bleiben die Leisten-Türme wie bisher (eigene Höhe, flache PETG-Lagen)', () => {
-    const o2 = { ...o, sepStyle: 'grow' }, R2 = GF.compute(o2);
+  it('einfarbig behalten die Leisten ihre eigene Höhe', () => {
+    const R2 = GF.compute({ ...o, sepStyle: 'perf' });
     expect(R2.spacers.types[0].h).toBeCloseTo(2.4, 6);
   });
 });
@@ -190,7 +223,7 @@ describe('Außenrand oben', () => {
 
 describe('Kundentest-Fixes', () => {
   const ext = (m) => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (let i = 0; i < m.v.length; i += 3) { x0 = Math.min(x0, m.v[i]); x1 = Math.max(x1, m.v[i]); y0 = Math.min(y0, m.v[i + 1]); y1 = Math.max(y1, m.v[i + 1]); } return [x1 - x0, y1 - y0]; };
-  it.each([[523.5, 287.2, 'grow', true], [400, 300, 'grow', false], [600, 450, 'flip', false], [400, 300, 'grow', false, 'integrated']])('Exportierte Druckbetten passen in X/Y aufs Bett (%s × %s, %s)', (w, d, sepStyle, half, spacers = 'separate') => {
+  it.each([[523.5, 287.2, 'petg', true], [400, 300, 'petg', false], [600, 450, 'perf', false], [400, 300, 'petg', false, 'integrated']])('Exportierte Druckbetten passen in X/Y aufs Bett (%s × %s, %s)', (w, d, sepStyle, half, spacers = 'separate') => {
     const o = { ...BASE, boxW: w, boxD: d, sepStyle, half, spacers };
     const R = GF.compute(o);
     for (const s of R.stacks) {
@@ -211,7 +244,7 @@ describe('Kundentest-Fixes', () => {
     const t = Date.now(); const R = GF.compute({ ...BASE, boxW: 2000, boxD: 2000 });
     expect(R.error).toBeUndefined(); expect(Date.now() - t).toBeLessThan(2000);
   });
-  it.each(['grow', 'flip', 'ring', 'wedge', 'sheet'])('stackInfo = Werte aus den echten Netzen (%s)', (sepStyle) => {
+  it.each(['petg', 'perf'])('stackInfo = Werte aus den echten Netzen (%s)', (sepStyle) => {
     const o = { ...BASE, boxW: 600, boxD: 450, sepStyle, copies: 2 };
     for (const s of GF.compute(o).stacks) {
       const m = GF.stackMeshes(s, o), i = GF.stackInfo(s, o);

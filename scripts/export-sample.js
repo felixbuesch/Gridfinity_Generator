@@ -6,7 +6,7 @@ import GF from '../src/gf.js';
 const o = {
   boxW: +(process.argv[2] || 400), boxD: +(process.argv[3] || 300), clearance: 1, cornerR: 3, minSpacer: 2, half: false,
   spacers: 'separate', spacerStyle: 'ladder', alignX: 'center', alignY: 'center', spacerH: 2.4, rail: 1.2, ribPitch: 40,
-  bedX: 235, bedY: 256, bedZ: 256, stack: true, sepStyle: 'grow', sepT: 0.6, overhang: 45, maxStack: 8, towerReserve: 40,
+  bedX: 235, bedY: 256, bedZ: 256, stack: true, sepStyle: 'petg', sepT: 0.6, maxStack: 8, towerReserve: 40,
 };
 const R = GF.compute(o);
 if (R.error) { console.error(R.error); process.exit(1); }

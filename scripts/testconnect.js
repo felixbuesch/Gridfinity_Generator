@@ -12,7 +12,7 @@ for (const [connect, name] of [['tabs', 'Test_Verbindung_Zapfen'], ['bridges', '
   const o = {
     boxW: 85, boxD: 85, clearance: 1, cornerR: 0, minSpacer: 2, half: false, spacers: 'separate', spacerStyle: 'ladder',
     alignX: 'center', alignY: 'center', spacerH: 2.4, rail: 1.2, ribPitch: 40, bedX: 70, bedY: 200, bedZ: 100,
-    stack: false, sepStyle: 'grow', sepT: 0.6, overhang: 45, maxStack: 30, towerReserve: 0, connect, connFit: fit,
+    stack: false, sepStyle: 'petg', sepT: 0.6, maxStack: 30, towerReserve: 0, connect, connFit: fit,
   };
   const R = GF.compute(o);
   if (R.error || R.pieces.length !== 2 || R.stacks.length !== 1) { console.error('unerwartete Aufteilung', R.error, R.pieces && R.pieces.length); process.exit(1); }

@@ -10,7 +10,7 @@ const BASE = {
   boxW: 400, boxD: 300, clearance: 1, cornerR: 12, minSpacer: 2, half: false,
   spacers: 'separate', spacerStyle: 'ladder', alignX: 'center', alignY: 'center',
   spacerH: 2.4, rail: 1.2, ribPitch: 40, bedX: 235, bedY: 256, bedZ: 256,
-  stack: true, sepStyle: 'grow', sepT: 0.6, overhang: 45, maxStack: 30, towerReserve: 40,
+  stack: true, sepStyle: 'petg', sepT: 0.6, maxStack: 30, towerReserve: 40,
 };
 let wasm;
 beforeAll(async () => { wasm = await Module(); wasm.setup(); });
@@ -108,7 +108,7 @@ describe.each(CASES)('Eckradius: %s', (_name, extra) => {
     };
     M.R.types.forEach((t) => chk(GF.plateMesh(t), 'Platte ' + t.label));
     M.R.spacers.types.forEach((t) => chk(GF.spacerMesh(t), 'Leiste ' + t.label));
-    for (const sepStyle of ['grow', 'flip', 'ring', 'wedge', 'sheet']) {
+    for (const sepStyle of ['petg', 'perf']) {
       const o2 = { ...o, sepStyle }, R2 = GF.compute(o2);
       R2.stacks.forEach((s) => { const m = GF.stackMeshes(s, o2); chk(m.pla, sepStyle + ' PLA'); if (m.petg.f.length) chk(m.petg, sepStyle + ' PETG'); });
     }
