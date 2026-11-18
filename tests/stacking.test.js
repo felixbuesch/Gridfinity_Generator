@@ -12,7 +12,8 @@ const SIZES = [[400, 300], [300, 200], [560, 300], [600, 450], [150, 100], [800,
 
 // Rechteck und Zellgrenzen einer liegenden Platte im Bett-Koordinatensystem
 function placed(it) {
-  const xs = it.rot ? it.p.ay.cells.slice().reverse() : it.p.ax.cells, ys0 = it.rot ? it.p.ax.cells : it.p.ay.cells;
+  const rv = (a) => a.slice().reverse(), ax = it.r2 ? rv(it.p.ax.cells) : it.p.ax.cells, ay = it.r2 ? rv(it.p.ay.cells) : it.p.ay.cells;
+  const xs = it.rot ? rv(ay) : ax, ys0 = it.rot ? ax : ay;
   const ys = it.flip ? ys0.slice().reverse() : ys0;
   const edges = (seq, o) => seq.reduce((a, c) => (a.push(a[a.length - 1] + c), a), [o]);
   return { ex: edges(xs, it.dx), ey: edges(ys, it.dy) };
@@ -27,8 +28,9 @@ describe.each(SIZES.flatMap(([w, d]) => [[w, d, 'petg'], [w, d, 'perf']]))('Eins
     expect(R.error).toBeUndefined();
     expect(plateJobs).toHaveLength(1);
     expect(plateJobs[0].items).toHaveLength(R.pieces.length);
-    expect(R.stacks).toHaveLength(1); // auch die Leisten passen daneben
-    expect(GF.stackMeshes(R.stacks[0], o).height).toBeLessThanOrEqual(o.bedZ);
+    // einfarbig passen auch die Leisten daneben; mehrfarbig werden zu hohe Leistentürme geteilt (ggf. eigenes Bett)
+    if (sepStyle === 'perf') expect(R.stacks).toHaveLength(1);
+    for (const st of R.stacks) expect(GF.stackMeshes(st, o).height).toBeLessThanOrEqual(o.bedZ);
   });
 
   it('jede Platte liegt zellgenau auf der darunter', () => {

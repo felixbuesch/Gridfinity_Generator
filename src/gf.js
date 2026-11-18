@@ -876,44 +876,65 @@ const GF = (() => {
   // Wandrundungen einer Platte so, wie sie im Stapel liegt
   function itemClips(it) {
     let C = it.p.clips || [];
+    if (it.r2) C = C.map((c) => ({ ...c, cx: it.p.w - c.cx, cy: it.p.d - c.cy, q: (c.q + 2) % 4 }));
     if (it.rot) C = C.map((c) => ({ ...c, cx: it.p.d - c.cy, cy: c.cx, q: (c.q + 1) % 4 }));
     if (it.flip) { const dd = it.rot ? it.p.w : it.p.d; C = C.map((c) => ({ ...c, cy: dd - c.cy, q: [3, 2, 1, 0][c.q] })); }
     return moveClips(C, it.dx, it.dy);
   }
-  // Wie viele beschnittene Ecken der unteren Platte lägen unter vollem Material der oberen? (dort hinge die obere frei)
-  function hang(it, top) {
-    const lo = itemClips(top); if (!lo.length) return 0;
-    const w = it.rot ? it.p.d : it.p.w, d = it.rot ? it.p.w : it.p.d, up = itemClips(it);
-    const same = (a, b) => a.q === b.q && Math.abs(a.cx - b.cx) < 1e-6 && Math.abs(a.cy - b.cy) < 1e-6 && Math.abs(a.r - b.r) < 1e-6;
-    return lo.filter((c) => clipCuts(c, it.dx, it.dy, it.dx + w, it.dy + d) && !up.some((u) => same(u, c))).length;
+  // Rundungen zweier übereinanderliegender Teile vergleichen (beide in Stapel-Koordinaten).
+  // hang: Rundungen unten, über denen oben volles Material liegt (dort hinge das obere Teil frei)
+  // match: Rundungen oben, die genau über einer gleichen Rundung unten liegen (so soll es möglichst sein)
+  const sameClip = (a, b) => a.q === b.q && Math.abs(a.cx - b.cx) < 1e-6 && Math.abs(a.cy - b.cy) < 1e-6 && Math.abs(a.r - b.r) < 1e-6;
+  // liegt (x, y) im weggeschnittenen Bereich einer der Rundungen? (m: Abstand, der vom Kreis eingehalten werden muss)
+  const cutAway = (cl, x, y, m = 0) => cl.some((c) => { const [sx, sy] = clipSign(c.q); return sx * (x - c.cx) < 0 && sy * (y - c.cy) < 0 && Math.hypot(x - c.cx, y - c.cy) > c.r + m; });
+  // Punkte im weggeschnittenen Bereich einer Rundung innerhalb des Rechtecks (Raster 1 mm, 0,3 mm Abstand zum Kreis)
+  function cutPoints(c, x0, y0, x1, y1) {
+    const [sx, sy] = clipSign(c.q), out = [], st = 1;
+    const xa = Math.max(x0, sx > 0 ? c.cx - c.r : c.cx), xb = Math.min(x1, sx > 0 ? c.cx : c.cx + c.r);
+    const ya = Math.max(y0, sy > 0 ? c.cy - c.r : c.cy), yb = Math.min(y1, sy > 0 ? c.cy : c.cy + c.r);
+    for (let x = xa + st / 2; x < xb; x += st) for (let y = ya + st / 2; y < yb; y += st) if (cutAway([c], x, y, 0.3)) out.push([x, y]);
+    return out;
   }
+  // h: Rundungen unten, über deren weggeschnittenem Bereich oben Material liegt; m: genau gleiche Rundungen
+  function clipFit(lo, up, x0, y0, x1, y1) {
+    const h = lo.filter((c) => clipCuts(c, x0, y0, x1, y1) && !up.some((u) => sameClip(u, c)) && cutPoints(c, x0, y0, x1, y1).some(([x, y]) => !cutAway(up, x, y))).length;
+    return { h, m: up.filter((u) => lo.some((c) => sameClip(u, c))).length };
+  }
+  // so viel Fläche schneiden die Rundungen aus der Platte (mm², grob): kleine Ausschnitte kommen im Stapel nach unten
+  const clipArea = (p) => (p.clips || []).reduce((a, c) => a + cutPoints(c, 0, 0, p.w, p.d).length, 0);
+  function hang(it, top) {
+    const w = it.rot ? it.p.d : it.p.w, d = it.rot ? it.p.w : it.p.d;
+    return clipFit(itemClips(top), itemClips(it), it.dx, it.dy, it.dx + w, it.dy + d);
+  }
+  // Platte p auf die oberste Platte top legen: Zellen genau über Zellen. Erlaubt sind 0°, 90°, 180° und 270°
+  // (für den Druck ist die Richtung egal). Mit Wandrundungen gewinnt die Lage, in der nichts frei hängt und
+  // möglichst viele Rundungen genau übereinander liegen. Ergebnis trägt h (frei hängende Rundungen) und m.
   function placeOn(p, top, flip = 0) {
     let best = null;
-    for (const rot of [0, 1]) {
-      const xs = rot ? p.ay.cells.slice().reverse() : p.ax.cells, ys0 = rot ? p.ax.cells : p.ay.cells;
-      const ys = flip ? ys0.slice().reverse() : ys0;
-      if (!top.p.clips || !top.p.clips.length) { // ohne Wandrundung darunter: erste passende Lage (wie bisher)
+    const rev = (a) => a.slice().reverse(), clipped = (top.p.clips && top.p.clips.length) || (p.clips && p.clips.length);
+    for (const r2 of [0, 1]) for (const rot of [0, 1]) {
+      const ax = r2 ? rev(p.ax.cells) : p.ax.cells, ay = r2 ? rev(p.ay.cells) : p.ay.cells;
+      const xs = rot ? rev(ay) : ax, ys0 = rot ? ax : ay, ys = flip ? rev(ys0) : ys0;
+      if (!clipped) { // ohne Wandrundungen: erste passende Lage (wie bisher)
         const fx = seqFit(xs, top.xs), fy = seqFit(ys, top.ys);
-        if (fx !== null && fy !== null) return best || { p, rot, flip, xs, ys, dx: top.dx + fx, dy: top.dy + fy };
+        if (fx !== null && fy !== null) return { p, rot, r2, flip, xs, ys, dx: top.dx + fx, dy: top.dy + fy, h: 0, m: 0 };
         continue;
       }
-      // sonst die Lage, bei der nichts über einer beschnittenen Ecke hängt
       for (const fx of seqFits(xs, top.xs)) for (const fy of seqFits(ys, top.ys)) {
-        const it = { p, rot, flip, xs, ys, dx: top.dx + fx, dy: top.dy + fy }, h = hang(it, top);
-        if (!best || h < best.h) best = { ...it, h };
+        const it = { p, rot, r2, flip, xs, ys, dx: top.dx + fx, dy: top.dy + fy }, f = hang(it, top);
+        if (!best || f.h < best.h || (f.h === best.h && f.m > best.m)) best = { ...it, ...f };
       }
-      if (best && best.h === 0) break;
     }
-    if (best) delete best.h;
     return best;
   }
   function buildStacks(pieces, o) {
     const per = H + sepGap(o);
     const maxN = Math.max(1, Math.min(o.maxStack, Math.floor((o.bedZ - H) / per) + 1));
     const margins = pieces.some((p) => p.ax.mLow || p.ax.mHigh || p.ay.mLow || p.ay.mHigh);
-    // gleich große Platten: die mit Wandrundung nach oben, damit keine volle Ecke über einer beschnittenen hängt
-    const nc = (p) => (p.clips ? p.clips.length : 0);
-    const sorted = pieces.slice().sort((p, q) => q.w * q.d - p.w * p.d || Math.max(q.w, q.d) - Math.max(p.w, p.d) || nc(p) - nc(q));
+    // gleich große Platten: die mit Wandrundung nach oben, damit keine volle Ecke über einer beschnittenen hängt;
+    // die mit kleinem Ausschnitt weiter unten: die Platte darüber schneidet dann mindestens genauso viel weg
+    const nc = (p) => (p.clips ? p.clips.length : 0), ca = new Map(pieces.map((p) => [p, clipArea(p)]));
+    const sorted = pieces.slice().sort((p, q) => q.w * q.d - p.w * p.d || Math.max(q.w, q.d) - Math.max(p.w, p.d) || nc(p) - nc(q) || ca.get(p) - ca.get(q));
     const stacks = [];
     for (const p of sorted) {
       let best = null;
@@ -928,11 +949,11 @@ const GF = (() => {
           it = fx === null || fy === null ? null : { p, rot: 0, flip, pax: p.ax, pay: ay, dx: top.dx + fx, dy: top.dy + fy };
         } else it = placeOn(p, top, s.items.length % 2);
         if (!it) continue;
-        // gleiche Platte oben bevorzugen, sonst die engste passende
-        const score = (top.p.key === p.key ? 0 : 1e9) + top.p.w * top.p.d;
+        // nichts frei hängend vor allem, dann Rundungen übereinander, dann gleiche Platte oben, sonst die engste passende
+        const score = (it.h || 0) * 1e15 - (it.m || 0) * 1e12 + (top.p.key === p.key ? 0 : 1e9) + top.p.w * top.p.d;
         if (!best || score < best.score) best = { s, it, score };
       }
-      if (best) best.s.items.push(best.it);
+      if (best) { delete best.it.h; delete best.it.m; best.s.items.push(best.it); }
       else stacks.push({ items: [{ p, rot: 0, flip: 0, xs: p.ax.cells, ys: p.ay.cells, pax: p.ax, pay: p.ay, dx: 0, dy: 0 }] });
     }
     stacks.forEach((s, i) => s.label = 'S' + (i + 1));
@@ -954,6 +975,23 @@ const GF = (() => {
       }
       st.regions = [{ x: w + g, y: 0, W: bx - w - g, H: by, lanes: [] }, { x: 0, y: d + g, W: w, H: by - d - g, lanes: [] }].filter(r => r.W > 0.5 && r.H > 0.5);
     });
+    // Rundungen einer Leiste, wie sie im Turm liegt (gespiegelt, gedreht, verschoben)
+    const spClips = (e) => {
+      const t = e.sp.type, mx = !!(e.tf & 1), my = !!(e.tf & 2);
+      let C = (e.sp.clips || []).map((c) => ({ ...c, cx: mx ? t.w - c.cx : c.cx, cy: my ? t.d - c.cy : c.cy, q: mirQ(c.q, mx, my) }));
+      if (e.rot) C = C.map((c) => ({ ...c, cx: t.d - c.cy, cy: c.cx, q: (c.q + 1) % 4 }));
+      return moveClips(C, e.x, e.y);
+    };
+    // Leiste so spiegeln, dass ihre Rundungen über denen der Leiste darunter liegen (oben/unten ist bei Leisten egal)
+    const bestTf = (e, below) => {
+      const t = e.sp.type, w = e.rot ? t.d : t.w, d = e.rot ? t.w : t.d, lo = spClips(below);
+      let best = null;
+      for (const tf of [0, 1, 2, 3]) {
+        const f = clipFit(lo, spClips({ ...e, tf }), e.x, e.y, e.x + w, e.y + d);
+        if (!best || f.h < best.h || (f.h === best.h && f.m > best.m)) best = { tf, ...f };
+      }
+      return best.tf;
+    };
     const fit = (st, tw) => {
       const sp = tw[0], sw = sp.x1 - sp.x0, sd = sp.y1 - sp.y0, L = Math.max(sw, sd), T = Math.min(sw, sd);
       for (const r of st.regions) {
@@ -968,9 +1006,12 @@ const GF = (() => {
         const a = lane.used; lane.used += L + g;
         // strip long axis along the region's long axis
         const x = alongY ? r.x + lane.off : r.x + a, y = alongY ? r.y + a : r.y + lane.off;
+        let below = null;
         tw.forEach((q, level) => {
           const longX = (q.x1 - q.x0) >= (q.y1 - q.y0), rot = longX !== !alongY;
-          st[tw.key || 'spacers'].push({ sp: q, x, y, rot, level });
+          const e = { sp: q, x, y, rot, level, tf: 0 };
+          if (below && !tw.key) e.tf = bestTf(e, below);
+          st[tw.key || 'spacers'].push(e); below = e;
         });
         return true;
       }
@@ -985,12 +1026,36 @@ const GF = (() => {
       const k = L.toFixed(2) + 'x' + T.toFixed(2);
       if (!groups.has(k)) groups.set(k, []); groups.get(k).push(sp);
     }
-    for (const arr of groups.values()) for (let i = 0; i < arr.length; i += maxT) towers.push(arr.slice(i, i + maxT));
+    // ungerundete Leisten unten, darüber die mit kleinem, ganz oben die mit großem Ausschnitt
+    const ck = new Map(spacers.list.map((sp) => [sp, clipArea({ clips: sp.clips, w: sp.x1 - sp.x0, d: sp.y1 - sp.y0 })]));
+    for (const arr of groups.values()) {
+      arr.sort((a, b) => (a.clips || []).length - (b.clips || []).length || ck.get(a) - ck.get(b));
+      for (let i = 0; i < arr.length; i += maxT) towers.push(arr.slice(i, i + maxT));
+    }
     const order = towers.sort((a, b) => Math.max(b[0].x1 - b[0].x0, b[0].y1 - b[0].y0) - Math.max(a[0].x1 - a[0].x0, a[0].y1 - a[0].y0));
     // Brücken-Reihen: flach, nie gestapelt, nach den Leisten
     for (const b of (bridges ? bridges.list : [])) { const tw = [b]; tw.key = 'bridges'; order.push(tw); }
+    // Mehrfarbig: ein Leistenturm neben einem Plattenstapel darf nicht höher sein als der Stapel, sonst muss
+    // der Prime-Tower (Abfall) nur wegen der Leisten weiter wachsen. Zu hohe Türme werden geteilt.
+    const cap = (st) => {
+      if (!twoMaterials(o) || !st.items || !st.items.length) return Infinity;
+      const nl = st.items.reduce((a, it, k) => Math.max(a, (it.lv ?? k) + 1), 0), hp = nl * H + (nl - 1) * sepGap(o);
+      return Math.max(1, Math.floor((hp - spacerHeight(o)) / perT + 1e-9) + 1);
+    };
     const left = [];
-    for (const tw of order) { if (!stacks.some(st => fit(st, tw))) left.push(tw); }
+    for (const tw0 of order) {
+      if (tw0.key) { if (!stacks.some((st) => fit(st, tw0))) left.push(tw0); continue; } // Brücken
+      let tw = tw0;
+      for (const st of stacks) {
+        while (tw.length) { // so viele Ebenen, wie neben diesen Stapel passen; der Rest daneben oder woanders
+          const part = tw.slice(0, Math.min(cap(st), tw.length));
+          if (!fit(st, part)) break;
+          tw = tw.slice(part.length);
+        }
+        if (!tw.length) break;
+      }
+      if (tw.length) left.push(tw);
+    }
     while (left.length) { // own beds for what did not fit
       const st = { items: [], spacers: [], bridges: [], bed: { w: BX, d: BY }, regions: [{ x: 0, y: 0, W: BX, H: BY, lanes: [] }], label: 'L' };
       const rest = left.filter(tw => !fit(st, tw));
@@ -1021,11 +1086,38 @@ const GF = (() => {
     return tiles.map((t) => ({ ...t, y0: d - t.y1, y1: d - t.y0, boundary: sw(t.boundary), nbPocket: sw(t.nbPocket), feat: sw(t.feat),
       clips: (t.clips || []).map((c) => ({ ...c, cy: d - c.cy, q: [3, 2, 1, 0][c.q] })) }));
   }
+  // Kacheln in [0,w] x [0,d] spiegeln: mx links/rechts, my vorne/hinten, beides = 180° gedreht
+  const mirQ = (q, mx, my) => { if (mx) q = [1, 0, 3, 2][q]; if (my) q = [3, 2, 1, 0][q]; return q; };
+  function mirTiles(tiles, w, d, mx, my) {
+    if (!mx && !my) return tiles;
+    const sd = (a) => { if (!a) return a; let b = mx ? [a[0], a[3], a[2], a[1]] : a; if (my) b = [b[2], b[1], b[0], b[3]]; return b; };
+    return tiles.map((t) => ({ ...t, x0: mx ? w - t.x1 : t.x0, x1: mx ? w - t.x0 : t.x1, y0: my ? d - t.y1 : t.y0, y1: my ? d - t.y0 : t.y1,
+      boundary: sd(t.boundary), nbPocket: sd(t.nbPocket), feat: sd(t.feat),
+      rounds: Object.fromEntries(Object.entries(t.rounds || {}).map(([k, r]) => [mirQ(+k, mx, my), r])),
+      clips: (t.clips || []).map((c) => ({ ...c, cx: mx ? w - c.cx : c.cx, cy: my ? d - c.cy : c.cy, q: mirQ(c.q, mx, my) })) }));
+  }
+  // Platte in der Ebene gedreht, wie sie im Stapel liegt: erst 180° (r2), dann 90° (rot)
+  function orientTiles(it) {
+    const T = it.r2 ? mirTiles(it.p.type.tiles, it.p.w, it.p.d, true, true) : it.p.type.tiles;
+    return it.rot ? rotTiles(T, it.p.d) : T;
+  }
   // Kacheln einer Platte so, wie sie im Stapel liegt (gedreht, gewendet, verschoben)
   function itemTiles(it) {
-    let T = it.rot ? rotTiles(it.p.type.tiles, it.p.d) : it.p.type.tiles;
+    let T = orientTiles(it);
     if (it.flip) T = flipTiles(T, it.rot ? it.p.w : it.p.d);
     return T.map((t) => moveTile(t, it.dx, it.dy));
+  }
+  // Leiste so, wie sie im Turm liegt: e.tf Bit 1 = links/rechts gespiegelt, Bit 2 = vorne/hinten gespiegelt
+  // (Leisten sind oben und unten gleich: gespiegelt heißt nur kopfüber gedruckt), dann um 90° gedreht (rot)
+  function spacerPlaced(e) {
+    const t = e.sp.type, T = mirTiles(t.tiles, t.w, t.d, !!(e.tf & 1), !!(e.tf & 2));
+    return (e.rot ? rotTiles(T, t.d) : T).map((q) => moveTile(q, e.x, e.y));
+  }
+  function mirMesh(m, w, d, tf) {
+    const mx = !!(tf & 1), my = !!(tf & 2); if (!mx && !my) return m;
+    const out = new Mesh(), V = m.v, F = m.f, P = (i) => [mx ? w - V[3 * i] : V[3 * i], my ? d - V[3 * i + 1] : V[3 * i + 1], V[3 * i + 2]];
+    for (let q = 0; q < F.length; q += 3) mx !== my ? out.tri(P(F[q]), P(F[q + 2]), P(F[q + 1])) : out.tri(P(F[q]), P(F[q + 1]), P(F[q + 2]));
+    return out;
   }
   // liegt ein Punkt (mit Rand m) im Material der Kacheln: im Umriss, nicht in einer Wandrundung, nicht über einer Verbindungstasche
   function solidAt(tiles, x, y, m) {
@@ -1087,7 +1179,7 @@ const GF = (() => {
       if (lvk > 0 && lo) for (const [x, y] of perfPoints(up, it.flip ? 'top' : 'foot', P, lo)) if (solidAt(up, x, y, m) && solidAt(lo, x, y, m)) out.push([x, y, (lvk - 1) * per + H, lvk * per]);
       lo = up;
     });
-    const sh = spacerHeight(o), perS = sh + P.gap, placed = (e) => (e.rot ? rotTiles(e.sp.type.tiles, e.sp.type.d) : e.sp.type.tiles).map((t) => moveTile(t, e.x, e.y));
+    const sh = spacerHeight(o), perS = sh + P.gap, placed = spacerPlaced;
     for (const e of (stack.spacers || [])) {
       const lv = e.level || 0; if (!lv) continue;
       const below = stack.spacers.find((q) => q.x === e.x && q.y === e.y && (q.level || 0) === lv - 1); if (!below) continue;
@@ -1112,7 +1204,7 @@ const GF = (() => {
   function stackMeshes(stack, o) {
     const pla = new Mesh(), petg = new Mesh(), perf = new Mesh(), gap = sepGap(o), per = H + gap, pm = perfMode(o);
     stack.items.forEach((it, k) => {
-      const base = it.rot ? rotTiles(it.p.type.tiles, it.p.d) : it.p.type.tiles;
+      const base = orientTiles(it);
       const lvk = it.lv ?? k;
       // PETG-Zwischenschicht unter der Platte: kopfüber liegt sie mit den Stegoberkanten auf, sonst mit den Füßen
       if (lvk > 0 && !pm) addSeparator(petg, itemTiles(it), (lvk - 1) * per + H, o.sepT, !!it.flip);
@@ -1130,11 +1222,14 @@ const GF = (() => {
     let hs = 0;
     for (const e of (stack.spacers || [])) {
       const t = e.sp.type; if (!t._mesh || t._meshH !== t.h) { t._mesh = spacerMesh(t); t._meshH = t.h; }
-      const lv = e.level || 0;
-      merge(pla, t._mesh, e.x, e.y, e.rot, t.d, lv * perS);
+      const lv = e.level || 0, tf = e.tf || 0;
+      t._mir = t._mir && t._mir.src === t._mesh ? t._mir : { src: t._mesh };
+      if (!t._mir[tf]) t._mir[tf] = mirMesh(t._mesh, t.w, t.d, tf);
+      merge(pla, t._mir[tf], e.x, e.y, e.rot, t.d, lv * perS);
       if (lv > 0 && !pm) { // PETG sheet with the strip's footprint below it
-        if (!t._sep || t._sepT !== o.sepT) { t._sep = new Mesh(); addPlate(t._sep, t.tiles, 0, o.sepT); t._sepT = o.sepT; }
-        merge(petg, t._sep, e.x, e.y, e.rot, t.d, lv * perS - o.sepT);
+        if (!t._sep || t._sepT !== o.sepT) { t._sep = new Mesh(); addPlate(t._sep, t.tiles, 0, o.sepT); t._sepT = o.sepT; t._sepMir = {}; }
+        if (!t._sepMir[tf]) t._sepMir[tf] = mirMesh(t._sep, t.w, t.d, tf);
+        merge(petg, t._sepMir[tf], e.x, e.y, e.rot, t.d, lv * perS - o.sepT);
       }
       hs = Math.max(hs, lv * perS + sh);
     }
@@ -1331,7 +1426,7 @@ ${cfgParts}  </object>
     return out;
   }
 
-  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PRINTERS, printerOf, applyPrinter, printerFor, printArea, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, halfRoom, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
+  return { PITCH, H, MAX_DIM, stackInfo, toBed, nCopies, PRINTERS, printerOf, applyPrinter, printerFor, printArea, PERF, perfMode, perfOpt, perfList, concat, twoMaterials, itemTiles, spacerPlaced, CONN, bridgeMesh, bridgeSize, connPad, wallClips, clipPoly, outline, fitSizes, halfRoom, spacerHeight, compute, spacerMesh, plateMesh, stackMeshes, volume, stl, threeMF, zip, Mesh, addPlate, addSeparator, pieceTiles };
 })();
 
 export default GF;

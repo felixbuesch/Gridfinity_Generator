@@ -14,7 +14,7 @@ const LAMP = 0xffc48a;     // Farbe der Lampe über den Modellen
 
 // gleiche Grundwerte wie das Formular des Planers
 export const DEFAULTS = {
-  boxW: 400, boxD: 300, clearance: 1, cornerR: 3, minSpacer: 2, half: false,
+  boxW: 400, boxD: 300, clearance: 1, cornerR: 0, minSpacer: 2, half: false,
   spacers: 'separate', spacerStyle: 'ladder', alignX: 'center', alignY: 'center',
   spacerH: 2.4, rail: 1.2, ribPitch: 40, bedX: 235, bedY: 256, bedZ: 256,
   stack: true, sepStyle: 'petg', sepT: 0.6, overhang: 45, maxStack: 30, towerReserve: 40, copies: 1,
@@ -42,8 +42,8 @@ export const USES = [
 // Planer-Einstellungen, die sich aus dem Einsatzort ergeben
 export function planOptions(use, W, D) {
   if (use === 'desk') return { boxW: W, boxD: D, clearance: 0, cornerR: 0, minSpacer: 999 };
-  if (use === 'drawer') return { boxW: W, boxD: D, clearance: 1, cornerR: 2, minSpacer: 2 };
-  return { boxW: W, boxD: D, clearance: 1, cornerR: 3, minSpacer: 2 };
+  if (use === 'drawer') return { boxW: W, boxD: D, clearance: 1, cornerR: 0, minSpacer: 2 };
+  return { boxW: W, boxD: D, clearance: 1, cornerR: 0, minSpacer: 2 };
 }
 
 const $ = (id) => document.getElementById(id);
